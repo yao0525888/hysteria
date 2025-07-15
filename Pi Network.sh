@@ -20,12 +20,7 @@ DHCP_GW="192.168.30.1"
 DHCP_DNS1="192.168.30.1"
 DHCP_DNS2="8.8.8.8"
 FRP_VERSION="v0.62.1"
-FRPS_PORT="31410"
-FRPS_KCP_PORT="31410"
-FRPS_DASHBOARD_PORT="31411"
-FRPS_TOKEN="DFRN2vbG123"
-FRPS_DASHBOARD_USER="admin"
-FRPS_DASHBOARD_PWD="yao581581"
+FRPS_PORT="7000"
 SILENT_MODE=true
 SERVER_IP=$(curl -s ifconfig.me || hostname -I | awk '{print $1}')
 
@@ -225,14 +220,8 @@ install_frps() {
     cat > /etc/frp/frps.toml << EOF
 bindAddr = "0.0.0.0"
 bindPort = ${FRPS_PORT}
-kcpBindPort = ${FRPS_KCP_PORT}
 auth.method = "token"
 auth.token = "${FRPS_TOKEN}"
-webServer.addr = "0.0.0.0"
-webServer.port = ${FRPS_DASHBOARD_PORT}
-webServer.user = "${FRPS_DASHBOARD_USER}"
-webServer.password = "${FRPS_DASHBOARD_PWD}"
-enablePrometheus = true
 transport.tls.force = true
 EOF
     if [ $? -ne 0 ]; then
