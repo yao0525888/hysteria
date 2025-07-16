@@ -32,31 +32,23 @@ get_ip_region() {
         realip
     fi
 
-    local chinese_region=""
     local country_code=""
 
-    chinese_region=$(curl -s "https://cip.cc/${ip}" | grep "数据二" | cut -d ":" -f2 | awk '{print $1}')
-    if [[ -n "$chinese_region" && "$chinese_region" != *"timeout"* ]]; then
-        echo "$chinese_region"
-        return
-    fi
-
-    country_code=$(curl -s -m 5 "https://ipinfo.io/${ip}/json" | grep -o '"country":"[^"]*"' | cut -d ':' -f2 | tr -d '",')
+    country_code=$(curl -s -m 5 "https://ipinfo.io/${ip}/json" | grep -o '"country":"[^\"]*"' | cut -d ':' -f2 | tr -d '",')
 
     if [[ -z "$country_code" ]]; then
-        country_code=$(curl -s -m 5 "https://api.ip.sb/geoip/${ip}" | grep -o '"country_code":"[^"]*"' | cut -d ':' -f2 | tr -d '",')
+        country_code=$(curl -s -m 5 "https://api.ip.sb/geoip/${ip}" | grep -o '"country_code":"[^\"]*"' | cut -d ':' -f2 | tr -d '",')
     fi
 
     if [[ -z "$country_code" ]]; then
         country_code=$(curl -s -m 5 "https://ipapi.co/${ip}/country")
-
         if [[ "$country_code" == *"error"* || "$country_code" == *"reserved"* ]]; then
             country_code=""
         fi
     fi
 
     if [[ -z "$country_code" ]]; then
-        country_code=$(curl -s -m 5 "http://ip-api.com/json/${ip}?fields=countryCode" | grep -o '"countryCode":"[^"]*"' | cut -d ':' -f2 | tr -d '",')
+        country_code=$(curl -s -m 5 "http://ip-api.com/json/${ip}?fields=countryCode" | grep -o '"countryCode":"[^\"]*"' | cut -d ':' -f2 | tr -d '",')
     fi
 
     if [[ -n "$country_code" ]]; then
