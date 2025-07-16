@@ -113,7 +113,7 @@ install_hy2() {
     auth_pwd=$(date +%s%N | md5sum | cut -c 1-8)
 
     cat << EOF > /etc/hysteria/config.yaml
-listen: :443
+listen: :7007
 
 tls:
   cert: /etc/hysteria/cert.crt
@@ -147,7 +147,7 @@ EOF
     node_name=$(get_ip_region "$ip")
 
     cat << EOF > /root/hy/hy-client.yaml
-server: $last_ip:443
+server: $last_ip:7007
 
 auth: $auth_pwd
 
@@ -173,7 +173,7 @@ EOF
 
     cat << EOF > /root/hy/hy-client.json
 {
-  "server": "$last_ip:443",
+  "server": "$last_ip:7007",
   "auth": "$auth_pwd",
   "tls": {
     "sni": "www.bing.com",
@@ -224,13 +224,6 @@ EOF
     if [[ -n $(systemctl status hysteria-server 2>/dev/null | grep -w active) ]]; then
         green "======================================================================================"
         green "Hysteria 2 安装成功！"
-        yellow "端口: 443"
-        yellow "密码: $auth_pwd"
-        yellow "伪装网站: www.bing.com"
-        yellow "TLS SNI: www.bing.com"
-        yellow "节点名称: $node_name"
-        echo ""
-        yellow "客户端配置已保存到: /root/hy/"
         yellow "分享链接:"
         red "$url"
         green "======================================================================================"
@@ -325,7 +318,7 @@ menu() {
     echo -e "#                 ${GREEN}Hysteria 2 一键配置脚本${PLAIN}                  #"
     echo "#############################################################"
     echo ""
-    echo -e " ${GREEN}1.${PLAIN} 安装 Hysteria 2 (端口443, 自签证书)"
+    echo -e " ${GREEN}1.${PLAIN} 安装 Hysteria 2 (端口7007, 自签证书)"
     echo -e " ${RED}2.${PLAIN} 卸载 Hysteria 2"
     echo "------------------------------------------------------------"
     echo -e " ${GREEN}3.${PLAIN} 关闭、开启、重启 Hysteria 2"
