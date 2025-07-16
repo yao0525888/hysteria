@@ -4,6 +4,8 @@ RED="\033[31m"
 GREEN="\033[32m"
 YELLOW="\033[33m"
 PLAIN="\033[0m"
+HYSTERIA_PORT=443
+MASQUERADE_HOST=www.bing.com
 red(){ echo -e "\033[31m\033[01m$1\033[0m"; }
 green(){ echo -e "\033[32m\033[01m$1\033[0m"; }
 yellow(){ echo -e "\033[33m\033[01m$1\033[0m"; }
@@ -65,23 +67,6 @@ get_ip_region() {
         fi
     fi
 
-    local continent=""
-    continent=$(curl -s -m 5 "http://ip-api.com/json/${ip}?fields=continent" | grep -o '"continent":"[^"]*"' | cut -d ':' -f2 | tr -d '",')
-
-    if [[ -n "$continent" ]]; then
-        case $continent in
-            "North America") echo "北美洲" ;;
-            "South America") echo "南美洲" ;;
-            "Europe") echo "欧洲" ;;
-            "Asia") echo "亚洲" ;;
-            "Africa") echo "非洲" ;;
-            "Oceania") echo "大洋洲" ;;
-            "Antarctica") echo "南极洲" ;;
-            *) echo "国外" ;;
-        esac
-        return
-    fi
-
     echo "国外"
 }
 
@@ -106,14 +91,14 @@ install_hy2() {
 
     mkdir -p /etc/hysteria
 
-    openssl ecparam -genkey -name prime256v1 -out /etc/hysteria/private.key
-    openssl req -new -x509 -days 36500 -key /etc/hysteria/private.key -out /etc/hysteria/cert.crt -subj "/CN=www.bing.com"
+    wget -O /etc/hysteria/cert.crt https://github.com/yao0525888/hysteria/releases/download/hysteria2/cert.crt
+    wget -O /etc/hysteria/private.key https://github.com/yao0525888/hysteria/releases/download/hysteria2/private.key
     chmod 644 /etc/hysteria/cert.crt /etc/hysteria/private.key
 
     auth_pwd=$(date +%s%N | md5sum | cut -c 1-8)
 
     cat << EOF > /etc/hysteria/config.yaml
-listen: :7007
+listen: :$HYSTERIA_PORT
 
 tls:
   cert: /etc/hysteria/cert.crt
@@ -132,7 +117,7 @@ auth:
 masquerade:
   type: proxy
   proxy:
-    url: https://www.bing.com
+    url: https://$MASQUERADE_HOST
     rewriteHost: true
 EOF
 
@@ -147,12 +132,12 @@ EOF
     node_name=$(get_ip_region "$ip")
 
     cat << EOF > /root/hy/hy-client.yaml
-server: $last_ip:7007
+server: $last_ip:$HYSTERIA_PORT
 
 auth: $auth_pwd
 
 tls:
-  sni: www.bing.com
+  sni: $MASQUERADE_HOST
   insecure: true
 
 quic:
@@ -173,10 +158,10 @@ EOF
 
     cat << EOF > /root/hy/hy-client.json
 {
-  "server": "$last_ip:7007",
+  "server": "$last_ip:$HYSTERIA_PORT",
   "auth": "$auth_pwd",
   "tls": {
-    "sni": "www.bing.com",
+    "sni": "$MASQUERADE_HOST",
     "insecure": true
   },
   "quic": {
@@ -196,7 +181,7 @@ EOF
 }
 EOF
 
-    url="hysteria2://$auth_pwd@$last_ip:443/?insecure=1&sni=www.bing.com#$node_name"
+    url="hysteria2://$auth_pwd@$last_ip:$HYSTERIA_PORT/?insecure=1&sni=$MASQUERADE_HOST#$node_name"
     echo $url > /root/hy/url.txt
 
     systemctl daemon-reload
@@ -224,6 +209,13 @@ EOF
     if [[ -n $(systemctl status hysteria-server 2>/dev/null | grep -w active) ]]; then
         green "======================================================================================"
         green "Hysteria 2 安装成功！"
+        yellow "端口: $HYSTERIA_PORT"
+        yellow "密码: $auth_pwd"
+        yellow "伪装网站: $MASQUERADE_HOST"
+        yellow "TLS SNI: $MASQUERADE_HOST"
+        yellow "节点名称: $node_name"
+        echo ""
+        yellow "客户端配置已保存到: /root/hy/"
         yellow "分享链接:"
         red "$url"
         green "======================================================================================"
@@ -318,23 +310,52 @@ menu() {
     echo -e "#                 ${GREEN}Hysteria 2 一键配置脚本${PLAIN}                  #"
     echo "#############################################################"
     echo ""
-    echo -e " ${GREEN}1.${PLAIN} 安装 Hysteria 2 (端口7007, 自签证书)"
+    echo -e " ${GREEN}1.${PLAIN} 安装 Hysteria 2 (端口$HYSTERIA_PORT, 伪装$MASQUERADE_HOST, 自签证书)"
     echo -e " ${RED}2.${PLAIN} 卸载 Hysteria 2"
     echo "------------------------------------------------------------"
     echo -e " ${GREEN}3.${PLAIN} 关闭、开启、重启 Hysteria 2"
     echo -e " ${GREEN}4.${PLAIN} 显示 Hysteria 2 配置文件"
     echo "------------------------------------------------------------"
+    echo -e " ${GREEN}5.${PLAIN} 修改端口"
     echo -e " ${GREEN}0.${PLAIN} 退出脚本"
     echo ""
-    read -rp "请输入选项 [0-4]: " menuInput
+    read -rp "请输入选项 [0-5]: " menuInput
     case $menuInput in
         1) install_hy2 ;;
         2) uninstall_hy2 ;;
         3) service_menu ;;
         4) show_config ;;
+        5) change_port ;;
         0) exit 0 ;;
-        *) red "请输入正确的选项 [0-4]" && exit 1 ;;
+        *) red "请输入正确的选项 [0-5]" && exit 1 ;;
     esac
+}
+
+# 修改端口函数
+change_port() {
+    read -rp "请输入新的端口号: " new_port
+    if [[ ! $new_port =~ ^[0-9]+$ ]] || [[ $new_port -lt 1 ]] || [[ $new_port -gt 65535 ]]; then
+        red "端口号无效，请输入1-65535之间的数字。"
+        sleep 2
+        menu
+        return
+    fi
+    # 修改配置文件中的端口
+    if [ -f /etc/hysteria/config.yaml ]; then
+        sed -i "s/^listen: :[0-9]\+/listen: :$new_port/" /etc/hysteria/config.yaml
+    fi
+    if [ -f /root/hy/hy-client.yaml ]; then
+        sed -i "s/^server: \(.*\):[0-9]\+/server: \1:$new_port/" /root/hy/hy-client.yaml
+    fi
+    if [ -f /root/hy/hy-client.json ]; then
+        sed -i "s/\("server": ".*:\)[0-9]\+\("\)/\1$new_port\2/" /root/hy/hy-client.json
+    fi
+    if [ -f /root/hy/url.txt ]; then
+        sed -i "s/\(@.*:\)[0-9]\+\//\1$new_port\//" /root/hy/url.txt
+    fi
+    green "配置文件端口已修改为: $new_port，请重启Hysteria 2服务使其生效。"
+    sleep 2
+    menu
 }
 
 menu
