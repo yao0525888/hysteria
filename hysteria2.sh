@@ -4,8 +4,9 @@ RED="\033[31m"
 GREEN="\033[32m"
 YELLOW="\033[33m"
 PLAIN="\033[0m"
-HYSTERIA_PORT=443
+HYSTERIA_PORT=7007
 MASQUERADE_HOST=www.bing.com
+HY_PASSWORD=9e264d67-fe47-4d2f-b55e-631a12e46a30
 red(){ echo -e "\033[31m\033[01m$1\033[0m"; }
 green(){ echo -e "\033[32m\033[01m$1\033[0m"; }
 yellow(){ echo -e "\033[33m\033[01m$1\033[0m"; }
@@ -87,8 +88,6 @@ install_hy2() {
     wget -O /etc/hysteria/private.key https://github.com/yao0525888/hysteria/releases/download/hysteria2/private.key
     chmod 644 /etc/hysteria/cert.crt /etc/hysteria/private.key
 
-    auth_pwd=$(date +%s%N | md5sum | cut -c 1-8)
-
     cat << EOF > /etc/hysteria/config.yaml
 listen: :$HYSTERIA_PORT
 
@@ -104,7 +103,7 @@ quic:
 
 auth:
   type: password
-  password: $auth_pwd
+  password: $HY_PASSWORD
 
 masquerade:
   type: proxy
@@ -126,7 +125,7 @@ EOF
     cat << EOF > /root/hy/hy-client.yaml
 server: $last_ip:$HYSTERIA_PORT
 
-auth: $auth_pwd
+auth: $HY_PASSWORD
 
 tls:
   sni: $MASQUERADE_HOST
@@ -151,7 +150,7 @@ EOF
     cat << EOF > /root/hy/hy-client.json
 {
   "server": "$last_ip:$HYSTERIA_PORT",
-  "auth": "$auth_pwd",
+  "auth": "$HY_PASSWORD",
   "tls": {
     "sni": "$MASQUERADE_HOST",
     "insecure": true
@@ -173,7 +172,7 @@ EOF
 }
 EOF
 
-    url="hysteria2://$auth_pwd@$last_ip:$HYSTERIA_PORT/?insecure=1&sni=$MASQUERADE_HOST#$node_name"
+    url="hysteria2://$HY_PASSWORD@$last_ip:$HYSTERIA_PORT/?insecure=1&sni=$MASQUERADE_HOST#$node_name"
     echo $url > /root/hy/url.txt
 
     systemctl daemon-reload
@@ -202,7 +201,7 @@ EOF
         green "======================================================================================"
         green "Hysteria 2 安装成功！"
         yellow "端口: $HYSTERIA_PORT"
-        yellow "密码: $auth_pwd"
+        yellow "密码: $HY_PASSWORD"
         yellow "伪装网站: $MASQUERADE_HOST"
         yellow "TLS SNI: $MASQUERADE_HOST"
         yellow "节点名称: $node_name"
