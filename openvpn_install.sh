@@ -27,7 +27,7 @@ find_openvpn_binary() {
         error_exit "未找到OpenVPN二进制文件"
     fi
 }
-DEFAULT_PORT=7005
+DEFAULT_PORT=7007
 DEFAULT_PROTOCOL="udp"
 SERVER_IP=$(curl -s ifconfig.me)
 CONFIG_DIR="/usr/local/openvpn"
@@ -35,13 +35,8 @@ SERVER_CONFIG="$CONFIG_DIR/server.conf"
 CLIENT_CONFIG="$CONFIG_DIR/client.ovpn"
 SILENT_MODE=true
 FRP_VERSION="v0.62.1"
-FRPS_PORT="7000"
-FRPS_UDP_PORT="7001"
-FRPS_KCP_PORT="7000"
-FRPS_DASHBOARD_PORT="31410"
+FRPS_PORT="7006"
 FRPS_TOKEN="DFRN2vbG123"
-FRPS_DASHBOARD_USER="admin"
-FRPS_DASHBOARD_PWD="yao58181"
 if [ "$EUID" -ne 0 ]; then
     log_error "请使用 root 权限运行此脚本"
     exit 1
@@ -463,16 +458,9 @@ install_frps() {
     {
         echo "bindAddr = \"0.0.0.0\""
         echo "bindPort = ${FRPS_PORT}"
-        echo "kcpBindPort = ${FRPS_KCP_PORT}"
         echo "auth.method = \"token\""
-        echo "auth.token = \"${FRPS_TOKEN}\""
-        echo "webServer.addr = \"0.0.0.0\""
-        echo "webServer.port = ${FRPS_DASHBOARD_PORT}"
-        echo "webServer.user = \"${FRPS_DASHBOARD_USER}\""
-        echo "webServer.password = \"${FRPS_DASHBOARD_PWD}\""
-        echo "enablePrometheus = true"
-        echo "log.level = \"error\""
-        echo "log.to = \"none\""
+        echo "auth.token = "${FRPS_TOKEN}""
+        echo "transport.tls.force = true"
     } > /etc/frp/frps.toml || error_exit "写入frps.toml配置文件失败"
     {
         echo "[Unit]"
@@ -528,9 +516,6 @@ show_service_info() {
     log_info "OpenVPN服务端口: ${DEFAULT_PORT}"
     log_info "FRPS 端口: ${FRPS_PORT}"
     log_info "FRPS 密码: ${FRPS_TOKEN}"
-    log_info "Web管理用户: ${FRPS_DASHBOARD_USER}"
-    log_info "Web管理密码: ${FRPS_DASHBOARD_PWD}"
-    log_info "Web管理界面: http://$(curl -s ifconfig.me || hostname -I | awk '{print $1}'):${FRPS_DASHBOARD_PORT}"
 }
 run_install() {
     install_dependencies
