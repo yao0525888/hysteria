@@ -260,19 +260,7 @@ install_xray() {
     }
   ],
   "routing": {
-    "domainStrategy": "IPIfNonMatch",
-    "rules": [
-      {
-        "type": "field",
-        "ip": ["geoip:private"],
-        "outboundTag": "blocked"
-      },
-      {
-        "type": "field",
-        "domain": ["geosite:category-ads-all"],
-        "outboundTag": "blocked"
-      }
-    ]
+    "domainStrategy": "AsIs"
   }
 }
 EOF
