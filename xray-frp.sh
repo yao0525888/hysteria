@@ -7,7 +7,6 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-
 declare -A COUNTRY_MAP=(
     ["US"]="美国" ["CN"]="中国" ["HK"]="香港" ["TW"]="台湾" ["JP"]="日本" ["KR"]="韩国"
     ["SG"]="新加坡" ["AU"]="澳大利亚" ["DE"]="德国" ["GB"]="英国" ["CA"]="加拿大" ["FR"]="法国"
@@ -22,13 +21,12 @@ declare -A COUNTRY_MAP=(
     ["UK"]="英国"
 )
 
-
 FRP_VERSION="v0.62.1"
 FRPS_PORT="7006"
 FRPS_TOKEN="DFRN2vbG123"
 SILENT_MODE=true
 
-
+XRAY_VERSION="${XRAY_VERSION:-v25.8.3}"
 UUID="9e264d67-fe47-4d2f-b55e-631a12e46a30"
 PRIVATE_KEY="SBznh0LAR5I-Xo2XDMAJrCC_UoS1Wb7gjycfKTFyZmA"
 PUBLIC_KEY="n5cQsnGAxadThor3_U5fIFafC24rA0-OrA3vQj06onU"
@@ -37,7 +35,6 @@ FLOW="xtls-rprx-vision"
 SNI="dash.cloudflare.com"
 SHORTID="abcdef12"
 NET="tcp"
-
 
 log_info() {
     if [[ "$SILENT_MODE" == "true" ]]; then
@@ -66,13 +63,11 @@ log_sub_step() {
     echo -e "${GREEN}[$1/$2]$3${NC}"
 }
 
-
 check_root() {
     if [ "$EUID" -ne 0 ]; then
         log_error "请使用 sudo 或 root 权限运行脚本"
     fi
 }
-
 
 uninstall_frps() {
     log_info "卸载旧版FRPS服务..."
@@ -139,8 +134,6 @@ EOF
     if [ $? -ne 0 ]; then
         log_error "写入 frps.service 文件失败"
     fi
-
-    
     systemctl daemon-reload
     if [ $? -ne 0 ]; then
         log_error "重新加载 systemd 配置失败"
@@ -177,16 +170,16 @@ install_xray() {
         *) log_error "不支持的架构" ;;
     esac
 
-    if command -v jq >/dev/null 2>&1; then
-        VER=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r .tag_name)
+    if [[ "$XRAY_VERSION" == v* ]]; then
+        VER="$XRAY_VERSION"
     else
-        VER=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | grep '"tag_name"' | head -n 1 | cut -d '"' -f 4)
+        VER="v$XRAY_VERSION"
     fi
-    if [ -z "$VER" ]; then
-        log_error "获取 Xray 版本号失败"
-    fi
-    log_info "Xray 最新版本号: $VER"
+    log_info "Xray 指定版本号: $VER"
     URL="https://github.com/XTLS/Xray-core/releases/download/$VER/Xray-linux-$ARCH.zip"
+    if ! wget -q --spider "$URL"; then
+        log_error "Xray 版本或架构不存在，无法下载: $URL"
+    fi
     wget -q -O xray.zip $URL
     if [ ! -s xray.zip ]; then
         log_error "Xray 安装包下载失败，文件不存在或为空，URL: $URL"
@@ -199,7 +192,6 @@ install_xray() {
     fi
     chmod +x xray
     mv xray /usr/local/bin/ >/dev/null 2>&1
-    mv geoip.dat geosite.dat /usr/local/bin/ >/dev/null 2>&1
     rm -f xray.zip LICENSE README.md >/dev/null 2>&1
 
     mkdir -p /usr/local/etc/xray >/dev/null 2>&1
@@ -244,19 +236,13 @@ install_xray() {
   "outbounds": [
     {
       "protocol": "freedom",
-      "tag": "direct",
-      "settings": {
-        "domainStrategy": "UseIPv4"
-      }
+      "tag": "direct"
     },
     {
       "protocol": "blackhole",
       "tag": "blocked"
     }
-  ],
-  "routing": {
-    "domainStrategy": "AsIs"
-  }
+  ]
 }
 EOF
 
@@ -352,7 +338,7 @@ modify_xray_port() {
 }
 
 show_xray_link() {
-    # 获取地区信息
+
     DOMAIN=$(curl -s ifconfig.me)
     COUNTRY_CODE=$(curl -s "https://ipinfo.io/$DOMAIN/country")
     REGION=${COUNTRY_MAP[$COUNTRY_CODE]}
@@ -375,7 +361,6 @@ show_menu() {
     echo -e "${YELLOW}===========================${NC}"
 }
 
-# 主函数
 main() {
     check_root
     
