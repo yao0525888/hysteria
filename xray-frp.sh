@@ -83,7 +83,6 @@ uninstall_frps() {
     systemctl daemon-reload >/dev/null 2>&1
 }
 
-# 安装FRPS
 install_frps() {
     log_step "2" "2" "安装FRPS服务..."
     uninstall_frps
@@ -168,7 +167,6 @@ EOF
     log_success "FRPS安装成功"
 }
 
-# 安装Xray
 install_xray() {
     log_step "1" "2" "安装Xray服务..."
     ARCH=$(uname -m)
@@ -179,7 +177,6 @@ install_xray() {
         *) log_error "不支持的架构" ;;
     esac
 
-    # 推荐优先用 jq
     if command -v jq >/dev/null 2>&1; then
         VER=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r .tag_name)
     else
@@ -205,10 +202,8 @@ install_xray() {
     mv geoip.dat geosite.dat /usr/local/bin/ >/dev/null 2>&1
     rm -f xray.zip LICENSE README.md >/dev/null 2>&1
 
-    # 创建配置目录
     mkdir -p /usr/local/etc/xray >/dev/null 2>&1
 
-    # 直接使用用户提供的配置文件
     cat > /usr/local/etc/xray/config.json <<EOF
 {
   "log": {
@@ -265,7 +260,6 @@ install_xray() {
 }
 EOF
 
-    # 配置systemd服务
     cat > /etc/systemd/system/xray.service <<EOF
 [Unit]
 Description=Xray Service
@@ -279,14 +273,12 @@ Restart=on-failure
 WantedBy=multi-user.target
 EOF
 
-    # 启动服务
     systemctl daemon-reload >/dev/null 2>&1
     systemctl enable xray >/dev/null 2>&1
     systemctl start xray >/dev/null 2>&1
     log_success "Xray安装成功"
 }
 
-# 显示FRPS信息
 show_frps_info() {
     echo -e "\n${YELLOW}>>> FRPS服务状态：${NC}"
     systemctl is-active frps
@@ -296,7 +288,6 @@ show_frps_info() {
     echo -e "TCP端口: $FRPS_PORT"
 }
 
-# 显示结果
 show_results() {
     echo -e "\n${YELLOW}>>> FRPS服务状态：${NC}"
     systemctl is-active frps
@@ -308,7 +299,7 @@ show_results() {
     echo -e "TCP端口: $FRPS_PORT"
 
     echo -e "\n${YELLOW}>>> Xray Reality 分享链接：${NC}"
-    # 获取地区信息
+
     DOMAIN=$(curl -s ifconfig.me)
     COUNTRY_CODE=$(curl -s "https://ipinfo.io/$DOMAIN/country")
     REGION=${COUNTRY_MAP[$COUNTRY_CODE]}
@@ -318,7 +309,6 @@ show_results() {
     echo -e "${GREEN}$LINK${NC}\n"
 }
 
-# 卸载Xray
 uninstall_xray() {
     log_step "1" "1" "卸载Xray服务..."
     systemctl stop xray >/dev/null 2>&1
@@ -332,29 +322,23 @@ uninstall_xray() {
     log_success "Xray卸载成功"
 }
 
-# 修改Xray端口
 modify_xray_port() {
     log_step "1" "1" "修改Xray端口..."
     read -p "请输入新的端口号(1-65535): " NEW_PORT
     
-    # 验证端口号
     if ! [[ "$NEW_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_PORT" -lt 1 ] || [ "$NEW_PORT" -gt 65535 ]; then
         log_error "无效的端口号，请输入1-65535之间的数字"
     fi
     
-    # 检查端口是否被占用
     if netstat -tuln | grep -q ":$NEW_PORT "; then
         log_error "端口 $NEW_PORT 已被占用"
     fi
     
-    # 修改配置文件
     sed -i "s/\"port\": [0-9]*/\"port\": $NEW_PORT/" /usr/local/etc/xray/config.json
     sed -i "s/\"dest\": \"www.bing.com:[0-9]*\"/\"dest\": \"www.bing.com:$NEW_PORT\"/" /usr/local/etc/xray/config.json
     
-    # 重启服务
     systemctl restart xray
     
-    # 获取地区信息
     DOMAIN=$(curl -s ifconfig.me)
     COUNTRY_CODE=$(curl -s "https://ipinfo.io/$DOMAIN/country")
     REGION=${COUNTRY_MAP[$COUNTRY_CODE]}
@@ -367,7 +351,6 @@ modify_xray_port() {
     echo -e "${GREEN}$LINK${NC}\n"
 }
 
-# 查看当前分享链接
 show_xray_link() {
     # 获取地区信息
     DOMAIN=$(curl -s ifconfig.me)
@@ -380,7 +363,6 @@ show_xray_link() {
     echo -e "${GREEN}$LINK${NC}\n"
 }
 
-# 显示菜单
 show_menu() {
     echo -e "${YELLOW}=== Xray & FRPS 管理脚本 ===${NC}"
     echo -e "${GREEN}1.${NC} 安装 Xray + FRPS"
