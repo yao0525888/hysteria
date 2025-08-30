@@ -237,9 +237,6 @@ install_xray() {
     {
       "protocol": "freedom",
       "tag": "direct"
-        "settings": {
-        "domainStrategy": "UseIPv4"
-      }
     },
     {
       "protocol": "blackhole",
