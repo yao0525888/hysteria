@@ -111,7 +111,6 @@ bindAddr = "0.0.0.0"
 bindPort = ${FRPS_PORT}
 auth.method = "token"
 auth.token = "${FRPS_TOKEN}"
-transport.tls.force = true
 EOF
     if [ $? -ne 0 ]; then
         log_error "写入 frps.toml 配置文件失败"
