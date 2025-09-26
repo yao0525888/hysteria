@@ -27,7 +27,7 @@ find_openvpn_binary() {
         error_exit "未找到OpenVPN二进制文件"
     fi
 }
-DEFAULT_PORT=7005
+DEFAULT_PORT=7008
 DEFAULT_PROTOCOL="udp"
 SERVER_IP=$(curl -s ifconfig.me)
 CONFIG_DIR="/usr/local/openvpn"
@@ -35,9 +35,7 @@ SERVER_CONFIG="$CONFIG_DIR/server.conf"
 CLIENT_CONFIG="$CONFIG_DIR/client.ovpn"
 SILENT_MODE=true
 FRP_VERSION="v0.62.1"
-FRPS_PORT="7000"
-FRPS_UDP_PORT="7001"
-FRPS_KCP_PORT="7000"
+FRPS_PORT="7007"
 FRPS_DASHBOARD_PORT="31410"
 FRPS_TOKEN="DFRN2vbG123"
 FRPS_DASHBOARD_USER="admin"
@@ -94,8 +92,8 @@ data-ciphers-fallback AES-256-CBC
 server 10.8.0.0 255.255.255.0
 ifconfig-pool-persist ipp.txt
 push "redirect-gateway def1 bypass-dhcp"
+push "dhcp-option DNS 119.29.29.29"
 push "dhcp-option DNS 8.8.8.8"
-push "dhcp-option DNS 8.8.4.4"
 keepalive 10 120
 tls-auth ta.key 0
 remote-cert-tls client
@@ -147,7 +145,7 @@ setup_port_forwarding() {
     fi
     sysctl -p > /dev/null 2>&1
     PUB_IF=$(ip -4 route list 0/0 | awk '{print $5; exit}')
-    [ -z "$PUB_IF" ] && PUB_IF=$(ip route get 8.8.8.8 | awk '{print $5; exit}')
+    [ -z "$PUB_IF" ] && PUB_IF=$(ip route get 119.29.29.29 | awk '{print $5; exit}')
     [ -z "$PUB_IF" ] && PUB_IF=$(ip route | grep default | awk '{print $5; exit}')
     
     iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -j MASQUERADE 2>/dev/null || true
@@ -235,7 +233,7 @@ start_service() {
     echo 1 > /proc/sys/net/ipv4/ip_forward
     sysctl -w net.ipv4.ip_forward=1 > /dev/null 2>&1
     PUB_IF=$(ip -4 route list 0/0 | awk '{print $5; exit}')
-    [ -z "$PUB_IF" ] && PUB_IF=$(ip route get 8.8.8.8 | awk '{print $5; exit}')
+    [ -z "$PUB_IF" ] && PUB_IF=$(ip route get 119.29.29.29 | awk '{print $5; exit}')
     [ -z "$PUB_IF" ] && PUB_IF=$(ip route | grep default | awk '{print $5; exit}')
     iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -j MASQUERADE 2>/dev/null || true
     iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o ${PUB_IF} -j MASQUERADE
@@ -402,7 +400,7 @@ uninstall() {
         sed -i '/^net.ipv4.ip_forward=1/d' /etc/sysctl.conf
         sysctl -p >/dev/null 2>&1
     fi
-    { iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -o $(ip route get 8.8.8.8 | awk '{print $5; exit}') -j MASQUERADE || true; } 2>/dev/null
+    { iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -o $(ip route get 119.29.29.29 | awk '{print $5; exit}') -j MASQUERADE || true; } 2>/dev/null
 }
 change_port() {
     local new_port=$1
@@ -463,11 +461,9 @@ install_frps() {
     {
         echo "bindAddr = \"0.0.0.0\""
         echo "bindPort = ${FRPS_PORT}"
-        echo "kcpBindPort = ${FRPS_KCP_PORT}"
         echo "auth.method = \"token\""
         echo "auth.token = \"${FRPS_TOKEN}\""
         echo "webServer.addr = \"0.0.0.0\""
-        echo "webServer.port = ${FRPS_DASHBOARD_PORT}"
         echo "webServer.user = \"${FRPS_DASHBOARD_USER}\""
         echo "webServer.password = \"${FRPS_DASHBOARD_PWD}\""
         echo "enablePrometheus = true"
