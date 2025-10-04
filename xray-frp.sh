@@ -60,9 +60,6 @@ install_frps() {
     if ! command -v wget >/dev/null 2>&1; then
         log_error "wget 未安装，请先安装wget: apt-get install wget 或 yum install wget"
     fi
-    if netstat -tuln | grep -q ":7006 "; then
-        log_error "端口 7006 已被占用，请先释放该端口或修改FRPS_PORT变量"
-    fi
     uninstall_frps
     local FRP_NAME="frp_${FRP_VERSION#v}_linux_amd64"
     local FRP_FILE="${FRP_NAME}.tar.gz"
@@ -108,8 +105,6 @@ install_frps() {
         systemctl status frps --no-pager
         echo -e "${YELLOW}配置文件内容：${NC}"
         cat /etc/frp/frps.toml
-        echo -e "${YELLOW}端口占用情况：${NC}"
-        netstat -tuln | grep 7006 || echo "端口7006未被占用"
         echo -e "${YELLOW}FRPS二进制文件：${NC}"
         ls -la /usr/local/frp/frps
         exit 1
