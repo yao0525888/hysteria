@@ -1,376 +1,908 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
-set -euo pipefail
+set -e
 
-readonly SCRIPT_NAME="$(basename "$0")"
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
-log() { echo -e "[l2tp] $*"; }
-die() { echo -e "[l2tp][error] $*" >&2; exit 1; }
+print_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
 
-require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || die "必须以root运行。请使用 sudo."; }
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        print_error "此脚本必须以root权限运行"
+        exit 1
+    fi
+}
 
 detect_os() {
-  if [[ -f /etc/os-release ]]; then
-    . /etc/os-release
-    OS_ID=${ID:-}
-    OS_VER_ID=${VERSION_ID:-}
-  else
-    die "无法检测系统: 缺少 /etc/os-release"
-  fi
-}
-
-detect_pkg_mgr() {
-  if command -v apt-get >/dev/null 2>&1; then
-    PKG_MGR="apt"
-  elif command -v dnf >/dev/null 2>&1; then
-    PKG_MGR="dnf"
-  elif command -v yum >/dev/null 2>&1; then
-    PKG_MGR="yum"
-  else
-    die "未找到受支持的包管理器 (apt/dnf/yum)"
-  fi
-}
-
-random_string() {
-  tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20
-}
-
-get_default_interface() {
-  ip route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}'
+    if [[ -f /etc/os-release ]]; then
+        . /etc/os-release
+        OS=$ID
+        VERSION=$VERSION_ID
+    else
+        print_error "无法检测操作系统类型"
+        exit 1
+    fi
+    
+    print_info "检测到操作系统: $OS $VERSION"
 }
 
 get_public_ip() {
-  curl -fsS --max-time 5 ifconfig.me 2>/dev/null || curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true
-}
-
-setup_china_mirror() {
-  local use_mirror="${USE_CHINA_MIRROR:-auto}"
-  
-  if [[ ${use_mirror} == "no" ]]; then
-    return 0
-  fi
-  
-  if [[ ${use_mirror} == "auto" ]]; then
-    local server_location
-    server_location=$(curl -fsS --max-time 3 https://ipapi.co/country_code 2>/dev/null || echo "")
-    if [[ ${server_location} != "CN" ]]; then
-      return 0
+    PUBLIC_IP=$(curl -s http://ifconfig.me || curl -s http://ipinfo.io/ip || curl -s http://icanhazip.com)
+    if [[ -z "$PUBLIC_IP" ]]; then
+        print_error "无法获取公网IP地址"
+        exit 1
     fi
-  fi
-  
-  log "检测到国内服务器，配置国内镜像源..."
-  
-  case "${PKG_MGR}" in
-    apt)
-      if [[ -f /etc/apt/sources.list ]]; then
-        cp /etc/apt/sources.list /etc/apt/sources.list.bak.$(date +%s) 2>/dev/null || true
-        local codename
-        codename=$(grep VERSION_CODENAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "")
-        if [[ -z ${codename} ]]; then
-          codename=$(cat /etc/os-release | grep -oP 'VERSION="\K[^"]+' | awk '{print $1}' | tr '[:upper:]' '[:lower:]' || echo "bookworm")
-        fi
-        
-        local is_debian=0
-        if [[ -f /etc/debian_version ]] && [[ ${OS_ID} == "debian" || ! ${OS_ID} == "ubuntu" ]]; then
-          is_debian=1
-        fi
-        
-        if [[ ${is_debian} -eq 1 ]]; then
-          log "配置 Debian ${codename} 阿里云镜像源"
-          cat > /etc/apt/sources.list <<EOF
-deb https://mirrors.aliyun.com/debian/ ${codename} main contrib non-free non-free-firmware
-deb https://mirrors.aliyun.com/debian/ ${codename}-updates main contrib non-free non-free-firmware
-deb https://mirrors.aliyun.com/debian-security/ ${codename}-security main contrib non-free non-free-firmware
-EOF
-        else
-          log "配置 Ubuntu ${codename} 阿里云镜像源"
-          cat > /etc/apt/sources.list <<EOF
-deb https://mirrors.aliyun.com/ubuntu/ ${codename} main restricted universe multiverse
-deb https://mirrors.aliyun.com/ubuntu/ ${codename}-updates main restricted universe multiverse
-deb https://mirrors.aliyun.com/ubuntu/ ${codename}-backports main restricted universe multiverse
-deb https://mirrors.aliyun.com/ubuntu/ ${codename}-security main restricted universe multiverse
-EOF
-        fi
-        log "已切换到阿里云镜像源，更新索引..."
-        apt-get update -y
-      fi
-      ;;
-    yum|dnf)
-      if [[ ! -f /etc/yum.repos.d/CentOS-Base.repo.bak ]]; then
-        cp -f /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak 2>/dev/null || true
-      fi
-      if grep -q "mirrors.aliyun.com" /etc/yum.repos.d/*.repo 2>/dev/null; then
-        log "已使用阿里云镜像，跳过"
-        return 0
-      fi
-      local ver="${OS_VER_ID%%.*}"
-      if [[ ${PKG_MGR} == "yum" ]] && [[ -n ${ver} ]]; then
-        curl -fsSL -o /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-${ver}.repo 2>/dev/null || true
-        ${PKG_MGR} clean all >/dev/null 2>&1 || true
-        log "已切换到阿里云镜像源"
-      fi
-      ;;
-  esac
+    print_info "服务器公网IP: $PUBLIC_IP"
 }
 
-ensure_epel_if_needed() {
-  if [[ ${PKG_MGR} == "yum" || ${PKG_MGR} == "dnf" ]]; then
-    if [[ -n ${OS_VER_ID:-} ]] && [[ ${OS_VER_ID%%.*} -le 7 ]]; then
-      if ! rpm -qa | grep -qi epel-release; then
-        log "安装 EPEL 仓库..."
-        if [[ ${PKG_MGR} == "dnf" ]]; then
-          dnf -y install epel-release || true
-        else
-          yum -y install epel-release || true
-        fi
-      fi
+generate_psk() {
+    PSK=$(openssl rand -base64 32)
+}
+
+get_user_input() {
+    echo ""
+    echo "=========================================="
+    echo "    L2TP/IPsec VPN 配置向导"
+    echo "=========================================="
+    echo ""
+    
+    read -p "请输入VPN用户名 [默认: vpnuser]: " VPN_USER
+    VPN_USER=${VPN_USER:-vpnuser}
+    
+    read -s -p "请输入VPN密码 [默认: 随机生成]: " VPN_PASSWORD
+    echo ""
+    if [[ -z "$VPN_PASSWORD" ]]; then
+        VPN_PASSWORD=$(openssl rand -base64 16)
+        print_info "已生成随机密码"
     fi
-  fi
+    
+    read -p "是否使用自定义IPsec PSK预共享密钥? (y/n) [默认: n]: " CUSTOM_PSK
+    if [[ "$CUSTOM_PSK" == "y" || "$CUSTOM_PSK" == "Y" ]]; then
+        read -s -p "请输入PSK预共享密钥: " PSK
+        echo ""
+    else
+        generate_psk
+        print_info "已生成随机PSK"
+    fi
+    
+    read -p "VPN客户端IP池起始地址 [默认: 10.10.10.10]: " IP_RANGE_START
+    IP_RANGE_START=${IP_RANGE_START:-10.10.10.10}
+    
+    read -p "VPN客户端IP池结束地址 [默认: 10.10.10.100]: " IP_RANGE_END
+    IP_RANGE_END=${IP_RANGE_END:-10.10.10.100}
+    
+    read -p "本地IP地址 [默认: 10.10.10.1]: " LOCAL_IP
+    LOCAL_IP=${LOCAL_IP:-10.10.10.1}
+    
+    echo ""
+    print_info "配置信息已设置完成"
 }
 
-install_packages() {
-  log "安装依赖 (strongswan/libreswan, xl2tpd, ppp, iptables)..."
-  case "${PKG_MGR}" in
-    apt)
-      export DEBIAN_FRONTEND=noninteractive
-      log "尝试安装 strongswan 和 xl2tpd..."
-      if apt-get install -y --no-install-recommends strongswan strongswan-pki libstrongswan-standard-plugins xl2tpd ppp iptables curl 2>&1; then
-        log "strongswan 安装成功"
-      else
-        log "strongswan 安装失败，尝试 libreswan..."
-        apt-get install -y --no-install-recommends libreswan xl2tpd ppp iptables curl 2>&1 || {
-          log "libreswan 也失败，尝试最小安装..."
-          apt-get install -y strongswan xl2tpd ppp iptables curl 2>&1 || true
-        }
-      fi
-      ;;
-    dnf)
-      dnf -y install libreswan xl2tpd ppp iptables curl
-      ;;
-    yum)
-      yum -y install libreswan xl2tpd ppp iptables curl || true
-      ;;
-  esac
-  
-  if ! command -v ipsec >/dev/null 2>&1; then
-    die "IPsec 软件安装失败。请手动运行: apt-get install -y strongswan xl2tpd"
-  fi
-  if ! command -v xl2tpd >/dev/null 2>&1; then
-    die "xl2tpd 安装失败。请手动运行: apt-get install -y xl2tpd"
-  fi
-  log "依赖包安装完成 ✓"
+install_packages_debian() {
+    print_info "更新软件包列表..."
+    apt-get update -y
+    
+    print_info "安装必要的软件包..."
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        strongswan \
+        strongswan-pki \
+        libstrongswan-extra-plugins \
+        libcharon-extra-plugins \
+        xl2tpd \
+        net-tools \
+        iptables \
+        iptables-persistent
 }
 
-write_sysctl() {
-  cat >/etc/sysctl.d/99-l2tp-ipsec.conf <<'EOF'
-net.ipv4.ip_forward = 1
-net.ipv4.conf.all.accept_redirects = 0
-net.ipv4.conf.all.send_redirects = 0
-net.ipv4.conf.default.accept_redirects = 0
-net.ipv4.conf.default.send_redirects = 0
-net.ipv4.conf.all.rp_filter = 0
-net.ipv4.conf.default.rp_filter = 0
-EOF
-  sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-l2tp-ipsec.conf || true
+install_packages_centos() {
+    print_info "安装EPEL源..."
+    yum install -y epel-release || dnf install -y epel-release
+    
+    print_info "安装必要的软件包..."
+    if command -v dnf &> /dev/null; then
+        dnf install -y strongswan xl2tpd iptables iptables-services
+    else
+        yum install -y strongswan xl2tpd iptables iptables-services
+    fi
 }
 
-write_ipsec_config() {
-  local public_ip="$1"
-  cat >/etc/ipsec.conf <<'EOF'
+configure_ipsec() {
+    print_info "配置IPsec..."
+    
+    cat > /etc/ipsec.conf <<EOF
 config setup
-  uniqueids=no
-  protostack=netkey
+    charondebug="ike 2, knl 2, cfg 2, net 2, esp 2, dmn 2, mgr 2"
+    uniqueids=never
 
-include /etc/ipsec.d/*.conf
+conn %default
+    ikelifetime=60m
+    keylife=20m
+    rekeymargin=3m
+    keyingtries=1
+    keyexchange=ikev1
+    authby=secret
+    ike=aes256-sha1-modp1024,aes128-sha1-modp1024,3des-sha1-modp1024!
+    esp=aes256-sha1,aes128-sha1,3des-sha1!
+
+conn L2TP-PSK
+    type=transport
+    left=%any
+    leftprotoport=17/1701
+    right=%any
+    rightprotoport=17/%any
+    auto=add
 EOF
 
-  cat >/etc/ipsec.d/l2tp-ipsec.conf <<EOF
-conn l2tp-psk
-  type=transport
-  authby=secret
-  ike=aes256-sha1,aes128-sha1,3des-sha1
-  phase2=esp
-  phase2alg=aes256-sha1,aes128-sha1,3des-sha1
-  pfs=no
-  rekey=no
-  keyingtries=3
-  dpddelay=30
-  dpdtimeout=120
-  dpdaction=clear
-  left=%defaultroute
-  leftid=${public_ip}
-  leftprotoport=17/1701
-  right=%any
-  rightprotoport=17/%any
-  ikev2=no
-  auto=add
+    cat > /etc/ipsec.secrets <<EOF
+%any %any : PSK "$PSK"
 EOF
+
+    chmod 600 /etc/ipsec.secrets
 }
 
-write_ipsec_secrets() {
-  local psk="$1"
-  umask 077
-  cat >/etc/ipsec.secrets <<EOF
-%any  %any  : PSK "${psk}"
-EOF
-}
-
-write_xl2tpd() {
-  local local_ip="$1"; shift
-  local pool_start="$1"; shift
-  local pool_end="$1"; shift
-  local pppoptfile="/etc/ppp/options.xl2tpd"
-
-  mkdir -p /etc/xl2tpd
-  cat >/etc/xl2tpd/xl2tpd.conf <<EOF
+configure_xl2tpd() {
+    print_info "配置xl2tpd..."
+    
+    cat > /etc/xl2tpd/xl2tpd.conf <<EOF
 [global]
-ipsec saref = yes
+port = 1701
+auth file = /etc/ppp/chap-secrets
 
 [lns default]
-ip range = ${pool_start}-${pool_end}
-local ip = ${local_ip}
+ip range = $IP_RANGE_START-$IP_RANGE_END
+local ip = $LOCAL_IP
 require chap = yes
 refuse pap = yes
 require authentication = yes
 name = l2tpd
-ppp debug = no
-pppoptfile = ${pppoptfile}
+pppoptfile = /etc/ppp/options.xl2tpd
 length bit = yes
 EOF
 
-  mkdir -p /etc/ppp
-  cat >"${pppoptfile}" <<'EOF'
-name l2tpd
+    cat > /etc/ppp/options.xl2tpd <<EOF
++mschap-v2
 ipcp-accept-local
 ipcp-accept-remote
-ms-dns 1.1.1.1
-ms-dns 8.8.8.8
 noccp
 auth
-crtscts
-idle 1800
-mtu 1400
-mru 1400
-lock
-hide-password
-local
-debug
-modem
+mtu 1410
+mru 1410
+nodefaultroute
 proxyarp
 lcp-echo-interval 30
 lcp-echo-failure 4
 connect-delay 5000
-EOF
-}
-
-write_chap_secrets() {
-  local user="$1"; local pass="$2"
-  umask 077
-  cat >/etc/ppp/chap-secrets <<EOF
-"${user}"  l2tpd  "${pass}"  *
-EOF
-}
-
-create_fw_script() {
-  local vpn_subnet="$1"; local public_if="$2"
-  local script_path="/usr/local/sbin/l2tp-iptables.sh"
-  cat >"${script_path}" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-
-iptables -C INPUT -p udp --dport 500 -j ACCEPT 2>/dev/null || iptables -A INPUT -p udp --dport 500 -j ACCEPT
-iptables -C INPUT -p udp --dport 4500 -j ACCEPT 2>/dev/null || iptables -A INPUT -p udp --dport 4500 -j ACCEPT
-iptables -C INPUT -p udp --dport 1701 -j ACCEPT 2>/dev/null || iptables -A INPUT -p udp --dport 1701 -j ACCEPT
-
-iptables -C FORWARD -s ${vpn_subnet} -o ${public_if} -j ACCEPT 2>/dev/null || iptables -A FORWARD -s ${vpn_subnet} -o ${public_if} -j ACCEPT
-iptables -C FORWARD -d ${vpn_subnet} -m conntrack --ctstate ESTABLISHED,RELATED -i ${public_if} -j ACCEPT 2>/dev/null || iptables -A FORWARD -d ${vpn_subnet} -m conntrack --ctstate ESTABLISHED,RELATED -i ${public_if} -j ACCEPT
-
-iptables -t nat -C POSTROUTING -s ${vpn_subnet} -o ${public_if} -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s ${vpn_subnet} -o ${public_if} -j MASQUERADE
-EOF
-  chmod +x "${script_path}"
-
-  cat >/etc/systemd/system/l2tp-iptables.service <<EOF
-[Unit]
-Description=Apply iptables rules for L2TP/IPsec
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=${script_path}
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
+ms-dns 8.8.8.8
+ms-dns 8.8.4.4
 EOF
 
-  systemctl daemon-reload
-  systemctl enable --now l2tp-iptables.service || true
+    cat > /etc/ppp/chap-secrets <<EOF
+$VPN_USER       l2tpd   $VPN_PASSWORD           *
+EOF
+
+    chmod 600 /etc/ppp/chap-secrets
 }
 
-restart_services() {
-  systemctl enable ipsec xl2tpd >/dev/null 2>&1 || true
-  systemctl restart ipsec || true
-  sleep 2
-  systemctl restart xl2tpd || true
+configure_sysctl() {
+    print_info "配置系统内核参数..."
+    
+    cat >> /etc/sysctl.conf <<EOF
+
+net.ipv4.ip_forward = 1
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.default.rp_filter = 0
+net.ipv4.conf.default.accept_source_route = 0
+net.ipv4.conf.default.send_redirects = 0
+net.ipv4.icmp_ignore_bogus_error_responses = 1
+EOF
+
+    sysctl -p
 }
 
-show_creds() {
-  local psk user pass
-  psk=$(awk '/PSK/ {match($0,/\"(.*)\"/,a); print a[1]}' /etc/ipsec.secrets 2>/dev/null || true)
-  user=$(awk 'NR==1 {gsub(/\"/,"",$1); print $1}' /etc/ppp/chap-secrets 2>/dev/null || true)
-  pass=$(awk 'NR==1 {gsub(/\"/,"",$3); print $3}' /etc/ppp/chap-secrets 2>/dev/null || true)
-  local server_ip
-  server_ip=$(get_public_ip)
-  echo "================ VPN 凭据 ================"
-  echo "服务器: ${server_ip:-<你的服务器公网IP>}"
-  echo "IPSec PSK: ${psk:-<未知>}"
-  echo "用户名: ${user:-<未知>}"
-  echo "密码: ${pass:-<未知>}"
-  echo "========================================="
+configure_firewall() {
+    print_info "配置防火墙规则..."
+    
+    DEFAULT_IFACE=$(ip route | grep default | awk '{print $5}' | head -n1)
+    
+    iptables -I INPUT -p udp --dport 500 -j ACCEPT
+    iptables -I INPUT -p udp --dport 4500 -j ACCEPT
+    iptables -I INPUT -p udp --dport 1701 -j ACCEPT
+    iptables -I INPUT -p esp -j ACCEPT
+    
+    iptables -t nat -A POSTROUTING -s 10.10.10.0/24 -o $DEFAULT_IFACE -j MASQUERADE
+    iptables -A FORWARD -s 10.10.10.0/24 -j ACCEPT
+    iptables -A FORWARD -d 10.10.10.0/24 -j ACCEPT
+    
+    if [[ "$OS" == "ubuntu" || "$OS" == "debian" ]]; then
+        netfilter-persistent save
+        netfilter-persistent reload
+    elif [[ "$OS" == "centos" || "$OS" == "rhel" ]]; then
+        service iptables save
+    fi
+    
+    print_info "防火墙规则已配置"
 }
 
-if [[ ${1:-} == "--show-creds" ]]; then
-  require_root
-  show_creds
-  exit 0
-fi
+start_services() {
+    print_info "启动VPN服务..."
+    
+    systemctl restart strongswan 2>/dev/null || systemctl restart ipsec
+    systemctl enable strongswan 2>/dev/null || systemctl enable ipsec
+    
+    systemctl restart xl2tpd
+    systemctl enable xl2tpd
+    
+    sleep 2
+    
+    if systemctl is-active --quiet strongswan || systemctl is-active --quiet ipsec; then
+        print_info "IPsec服务已启动"
+    else
+        print_warning "IPsec服务启动失败，请检查配置"
+    fi
+    
+    if systemctl is-active --quiet xl2tpd; then
+        print_info "xl2tpd服务已启动"
+    else
+        print_warning "xl2tpd服务启动失败，请检查配置"
+    fi
+}
 
-require_root
-detect_os
-detect_pkg_mgr
-setup_china_mirror
-ensure_epel_if_needed
+show_config() {
+    echo ""
+    echo "=========================================="
+    echo "    VPN配置完成！"
+    echo "=========================================="
+    echo ""
+    echo -e "${GREEN}服务器IP:${NC}        $PUBLIC_IP"
+    echo -e "${GREEN}IPsec PSK:${NC}       $PSK"
+    echo -e "${GREEN}VPN用户名:${NC}       $VPN_USER"
+    echo -e "${GREEN}VPN密码:${NC}         $VPN_PASSWORD"
+    echo ""
+    echo "=========================================="
+    echo "客户端配置说明:"
+    echo "=========================================="
+    echo "1. Windows客户端:"
+    echo "   - 控制面板 -> 网络和共享中心 -> 设置新的连接或网络"
+    echo "   - 选择 '连接到工作区' -> '使用我的Internet连接(VPN)'"
+    echo "   - Internet地址: $PUBLIC_IP"
+    echo "   - 连接类型: L2TP/IPsec"
+    echo "   - 预共享密钥: $PSK"
+    echo ""
+    echo "2. macOS客户端:"
+    echo "   - 系统偏好设置 -> 网络 -> '+' -> VPN(L2TP over IPsec)"
+    echo "   - 服务器地址: $PUBLIC_IP"
+    echo "   - 账户名称: $VPN_USER"
+    echo "   - 密码: $VPN_PASSWORD"
+    echo "   - 机密: $PSK"
+    echo ""
+    echo "3. iOS/Android客户端:"
+    echo "   - 设置 -> VPN -> 添加VPN配置"
+    echo "   - 类型: L2TP"
+    echo "   - 服务器: $PUBLIC_IP"
+    echo "   - 用户名: $VPN_USER"
+    echo "   - 密码: $VPN_PASSWORD"
+    echo "   - 密钥: $PSK"
+    echo "=========================================="
+    echo ""
+    
+    cat > /root/vpn_config.txt <<EOF
+L2TP/IPsec VPN 配置信息
+生成时间: $(date)
 
-IPSEC_PSK="${IPSEC_PSK:-}"
-VPN_USER="${VPN_USER:-}"
-VPN_PASSWORD="${VPN_PASSWORD:-}"
-VPN_SUBNET="${VPN_SUBNET:-10.10.0.0/24}"
-VPN_LOCAL_IP="${VPN_LOCAL_IP:-10.10.0.1}"
-VPN_POOL_START="${VPN_POOL_START:-10.10.0.10}"
-VPN_POOL_END="${VPN_POOL_END:-10.10.0.200}"
+服务器IP: $PUBLIC_IP
+IPsec PSK: $PSK
+VPN用户名: $VPN_USER
+VPN密码: $VPN_PASSWORD
+IP池范围: $IP_RANGE_START - $IP_RANGE_END
+本地IP: $LOCAL_IP
+EOF
+    
+    print_info "配置信息已保存到 /root/vpn_config.txt"
+}
 
-[[ -n ${IPSEC_PSK} ]] || IPSEC_PSK="$(random_string)"
-[[ -n ${VPN_USER} ]] || VPN_USER="vpnuser"
-[[ -n ${VPN_PASSWORD} ]] || VPN_PASSWORD="$(random_string)"
+add_vpn_user() {
+    read -p "请输入新用户名: " NEW_USER
+    if grep -q "^$NEW_USER[[:space:]]" /etc/ppp/chap-secrets 2>/dev/null; then
+        print_error "用户 $NEW_USER 已存在"
+        return 1
+    fi
+    read -s -p "请输入新密码: " NEW_PASSWORD
+    echo ""
+    
+    echo "$NEW_USER       l2tpd   $NEW_PASSWORD           *" >> /etc/ppp/chap-secrets
+    print_info "用户 $NEW_USER 已添加"
+    
+    systemctl restart xl2tpd
+}
 
-PUBLIC_IF="$(get_default_interface)"
-[[ -n ${PUBLIC_IF} ]] || die "无法检测默认出口网卡。请设置环境变量 PUBLIC_IF 后重试"
-PUBLIC_IP="$(get_public_ip)"
+delete_vpn_user() {
+    if [[ ! -f /etc/ppp/chap-secrets ]]; then
+        print_error "配置文件不存在"
+        return 1
+    fi
+    
+    echo ""
+    echo "当前VPN用户列表:"
+    echo "----------------------------------------"
+    awk '{if(NF>=3 && $1!~/#/) print "  - " $1}' /etc/ppp/chap-secrets
+    echo "----------------------------------------"
+    echo ""
+    
+    read -p "请输入要删除的用户名: " DEL_USER
+    if ! grep -q "^$DEL_USER[[:space:]]" /etc/ppp/chap-secrets; then
+        print_error "用户 $DEL_USER 不存在"
+        return 1
+    fi
+    
+    read -p "确认删除用户 $DEL_USER? (y/n): " CONFIRM
+    if [[ "$CONFIRM" == "y" || "$CONFIRM" == "Y" ]]; then
+        sed -i "/^$DEL_USER[[:space:]]/d" /etc/ppp/chap-secrets
+        print_info "用户 $DEL_USER 已删除"
+        systemctl restart xl2tpd
+    else
+        print_warning "已取消删除操作"
+    fi
+}
 
-install_packages
-write_sysctl
-write_ipsec_config "${PUBLIC_IP:-%defaultroute}"
-write_ipsec_secrets "${IPSEC_PSK}"
-write_xl2tpd "${VPN_LOCAL_IP}" "${VPN_POOL_START}" "${VPN_POOL_END}"
-write_chap_secrets "${VPN_USER}" "${VPN_PASSWORD}"
-create_fw_script "${VPN_SUBNET}" "${PUBLIC_IF}"
-restart_services
+modify_vpn_password() {
+    if [[ ! -f /etc/ppp/chap-secrets ]]; then
+        print_error "配置文件不存在"
+        return 1
+    fi
+    
+    echo ""
+    echo "当前VPN用户列表:"
+    echo "----------------------------------------"
+    awk '{if(NF>=3 && $1!~/#/) print "  - " $1}' /etc/ppp/chap-secrets
+    echo "----------------------------------------"
+    echo ""
+    
+    read -p "请输入要修改密码的用户名: " MOD_USER
+    if ! grep -q "^$MOD_USER[[:space:]]" /etc/ppp/chap-secrets; then
+        print_error "用户 $MOD_USER 不存在"
+        return 1
+    fi
+    
+    read -s -p "请输入新密码: " NEW_PASS
+    echo ""
+    read -s -p "请再次输入新密码: " NEW_PASS2
+    echo ""
+    
+    if [[ "$NEW_PASS" != "$NEW_PASS2" ]]; then
+        print_error "两次输入的密码不一致"
+        return 1
+    fi
+    
+    sed -i "s/^$MOD_USER[[:space:]].*/$MOD_USER       l2tpd   $NEW_PASS           */" /etc/ppp/chap-secrets
+    print_info "用户 $MOD_USER 的密码已修改"
+    systemctl restart xl2tpd
+}
 
-log "安装完成。"
-show_creds
-echo "配置文件: /etc/ipsec.conf, /etc/ipsec.d/l2tp-ipsec.conf, /etc/ipsec.secrets, /etc/xl2tpd/xl2tpd.conf, /etc/ppp/options.xl2tpd, /etc/ppp/chap-secrets"
-echo "防火墙规则服务: l2tp-iptables.service (systemd)"
-echo "如需修改DNS或地址池，请编辑 /etc/xl2tpd/xl2tpd.conf 与 /etc/ppp/options.xl2tpd 后重启: systemctl restart xl2tpd"
+list_vpn_users() {
+    if [[ ! -f /etc/ppp/chap-secrets ]]; then
+        print_error "配置文件不存在"
+        return 1
+    fi
+    
+    echo ""
+    echo "=========================================="
+    echo "        VPN用户列表"
+    echo "=========================================="
+    awk '{if(NF>=3 && $1!~/#/) printf "  用户名: %-20s 密码: %s\n", $1, $3}' /etc/ppp/chap-secrets
+    echo "=========================================="
+    echo ""
+}
 
+show_current_config() {
+    echo ""
+    echo "=========================================="
+    echo "        当前VPN配置"
+    echo "=========================================="
+    
+    PUBLIC_IP=$(curl -s http://ifconfig.me || curl -s http://ipinfo.io/ip || echo "无法获取")
+    echo -e "${GREEN}服务器IP:${NC}        $PUBLIC_IP"
+    
+    if [[ -f /etc/ipsec.secrets ]]; then
+        PSK=$(grep "PSK" /etc/ipsec.secrets | awk -F'"' '{print $2}')
+        echo -e "${GREEN}IPsec PSK:${NC}       $PSK"
+    fi
+    
+    if [[ -f /etc/xl2tpd/xl2tpd.conf ]]; then
+        IP_RANGE=$(grep "ip range" /etc/xl2tpd/xl2tpd.conf | awk '{print $3}')
+        LOCAL_IP=$(grep "local ip" /etc/xl2tpd/xl2tpd.conf | awk '{print $3}')
+        echo -e "${GREEN}IP池范围:${NC}        $IP_RANGE"
+        echo -e "${GREEN}本地IP:${NC}          $LOCAL_IP"
+    fi
+    
+    echo ""
+    echo "服务状态:"
+    if systemctl is-active --quiet strongswan || systemctl is-active --quiet ipsec; then
+        echo -e "  IPsec:    ${GREEN}运行中${NC}"
+    else
+        echo -e "  IPsec:    ${RED}已停止${NC}"
+    fi
+    
+    if systemctl is-active --quiet xl2tpd; then
+        echo -e "  xl2tpd:   ${GREEN}运行中${NC}"
+    else
+        echo -e "  xl2tpd:   ${RED}已停止${NC}"
+    fi
+    
+    echo "=========================================="
+    echo ""
+}
 
+modify_psk() {
+    if [[ ! -f /etc/ipsec.secrets ]]; then
+        print_error "IPsec配置文件不存在"
+        return 1
+    fi
+    
+    read -p "是否自动生成新的PSK? (y/n): " AUTO_PSK
+    if [[ "$AUTO_PSK" == "y" || "$AUTO_PSK" == "Y" ]]; then
+        NEW_PSK=$(openssl rand -base64 32)
+    else
+        read -s -p "请输入新的PSK: " NEW_PSK
+        echo ""
+    fi
+    
+    cat > /etc/ipsec.secrets <<EOF
+%any %any : PSK "$NEW_PSK"
+EOF
+    
+    chmod 600 /etc/ipsec.secrets
+    print_info "PSK已更新: $NEW_PSK"
+    
+    systemctl restart strongswan 2>/dev/null || systemctl restart ipsec
+    print_info "IPsec服务已重启"
+}
+
+modify_l2tp_config() {
+    if [[ ! -f /etc/xl2tpd/xl2tpd.conf ]]; then
+        print_error "L2TP配置文件不存在"
+        return 1
+    fi
+    
+    CURRENT_IP_RANGE=$(grep "ip range" /etc/xl2tpd/xl2tpd.conf | awk '{print $3}')
+    CURRENT_LOCAL_IP=$(grep "local ip" /etc/xl2tpd/xl2tpd.conf | awk '{print $3}')
+    
+    echo ""
+    echo "=========================================="
+    echo "        修改L2TP配置"
+    echo "=========================================="
+    echo ""
+    echo "当前配置:"
+    echo "  IP池范围: $CURRENT_IP_RANGE"
+    echo "  本地IP:   $CURRENT_LOCAL_IP"
+    echo ""
+    
+    read -p "新的IP池起始地址 [回车保持不变]: " NEW_IP_START
+    read -p "新的IP池结束地址 [回车保持不变]: " NEW_IP_END
+    read -p "新的本地IP地址 [回车保持不变]: " NEW_LOCAL_IP
+    
+    if [[ -n "$NEW_IP_START" && -n "$NEW_IP_END" ]]; then
+        sed -i "s|ip range = .*|ip range = $NEW_IP_START-$NEW_IP_END|" /etc/xl2tpd/xl2tpd.conf
+        print_info "IP池范围已更新为: $NEW_IP_START-$NEW_IP_END"
+    fi
+    
+    if [[ -n "$NEW_LOCAL_IP" ]]; then
+        sed -i "s|local ip = .*|local ip = $NEW_LOCAL_IP|" /etc/xl2tpd/xl2tpd.conf
+        print_info "本地IP已更新为: $NEW_LOCAL_IP"
+    fi
+    
+    if [[ -n "$NEW_IP_START" || -n "$NEW_LOCAL_IP" ]]; then
+        systemctl restart xl2tpd
+        print_info "L2TP服务已重启"
+    else
+        print_warning "未进行任何修改"
+    fi
+}
+
+modify_dns() {
+    if [[ ! -f /etc/ppp/options.xl2tpd ]]; then
+        print_error "PPP配置文件不存在"
+        return 1
+    fi
+    
+    CURRENT_DNS1=$(grep "ms-dns" /etc/ppp/options.xl2tpd | head -n1 | awk '{print $2}')
+    CURRENT_DNS2=$(grep "ms-dns" /etc/ppp/options.xl2tpd | tail -n1 | awk '{print $2}')
+    
+    echo ""
+    echo "=========================================="
+    echo "        修改DNS服务器"
+    echo "=========================================="
+    echo ""
+    echo "当前DNS服务器:"
+    echo "  主DNS: $CURRENT_DNS1"
+    echo "  备DNS: $CURRENT_DNS2"
+    echo ""
+    echo "常用DNS服务器:"
+    echo "  1. Google DNS (8.8.8.8 / 8.8.4.4)"
+    echo "  2. Cloudflare (1.1.1.1 / 1.0.0.1)"
+    echo "  3. 阿里DNS (223.5.5.5 / 223.6.6.6)"
+    echo "  4. 腾讯DNS (119.29.29.29 / 182.254.116.116)"
+    echo "  5. 自定义"
+    echo ""
+    
+    read -p "请选择 [1-5]: " DNS_CHOICE
+    
+    case $DNS_CHOICE in
+        1)
+            DNS1="8.8.8.8"
+            DNS2="8.8.4.4"
+            ;;
+        2)
+            DNS1="1.1.1.1"
+            DNS2="1.0.0.1"
+            ;;
+        3)
+            DNS1="223.5.5.5"
+            DNS2="223.6.6.6"
+            ;;
+        4)
+            DNS1="119.29.29.29"
+            DNS2="182.254.116.116"
+            ;;
+        5)
+            read -p "请输入主DNS: " DNS1
+            read -p "请输入备DNS: " DNS2
+            ;;
+        *)
+            print_error "无效的选择"
+            return 1
+            ;;
+    esac
+    
+    sed -i "s/ms-dns .*/ms-dns $DNS1/" /etc/ppp/options.xl2tpd
+    sed -i "s/ms-dns $DNS1/ms-dns $DNS1\nms-dns $DNS2/" /etc/ppp/options.xl2tpd
+    
+    grep -v "ms-dns" /etc/ppp/options.xl2tpd > /tmp/options.xl2tpd.tmp
+    cat /tmp/options.xl2tpd.tmp > /etc/ppp/options.xl2tpd
+    echo "ms-dns $DNS1" >> /etc/ppp/options.xl2tpd
+    echo "ms-dns $DNS2" >> /etc/ppp/options.xl2tpd
+    rm -f /tmp/options.xl2tpd.tmp
+    
+    print_info "DNS服务器已更新为: $DNS1 / $DNS2"
+    systemctl restart xl2tpd
+    print_info "L2TP服务已重启"
+}
+
+modify_mtu() {
+    if [[ ! -f /etc/ppp/options.xl2tpd ]]; then
+        print_error "PPP配置文件不存在"
+        return 1
+    fi
+    
+    CURRENT_MTU=$(grep "^mtu" /etc/ppp/options.xl2tpd | awk '{print $2}')
+    CURRENT_MRU=$(grep "^mru" /etc/ppp/options.xl2tpd | awk '{print $2}')
+    
+    echo ""
+    echo "当前MTU/MRU值: $CURRENT_MTU / $CURRENT_MRU"
+    echo ""
+    read -p "请输入新的MTU值 [默认: 1410]: " NEW_MTU
+    NEW_MTU=${NEW_MTU:-1410}
+    
+    read -p "请输入新的MRU值 [默认: $NEW_MTU]: " NEW_MRU
+    NEW_MRU=${NEW_MRU:-$NEW_MTU}
+    
+    sed -i "s/^mtu .*/mtu $NEW_MTU/" /etc/ppp/options.xl2tpd
+    sed -i "s/^mru .*/mru $NEW_MRU/" /etc/ppp/options.xl2tpd
+    
+    print_info "MTU/MRU已更新为: $NEW_MTU / $NEW_MRU"
+    systemctl restart xl2tpd
+    print_info "L2TP服务已重启"
+}
+
+show_vpn_status() {
+    echo ""
+    echo "=========================================="
+    echo "        VPN服务状态"
+    echo "=========================================="
+    echo ""
+    
+    echo "【IPsec服务状态】"
+    systemctl status strongswan 2>/dev/null || systemctl status ipsec
+    echo ""
+    
+    echo "【xl2tpd服务状态】"
+    systemctl status xl2tpd
+    echo ""
+    
+    echo "【当前连接】"
+    if command -v ipsec &> /dev/null; then
+        ipsec statusall 2>/dev/null || echo "无活动连接"
+    fi
+    echo ""
+}
+
+restart_vpn_services() {
+    print_info "正在重启VPN服务..."
+    
+    systemctl restart strongswan 2>/dev/null || systemctl restart ipsec
+    systemctl restart xl2tpd
+    
+    sleep 2
+    
+    if systemctl is-active --quiet strongswan || systemctl is-active --quiet ipsec; then
+        print_info "IPsec服务已重启"
+    else
+        print_error "IPsec服务重启失败"
+    fi
+    
+    if systemctl is-active --quiet xl2tpd; then
+        print_info "xl2tpd服务已重启"
+    else
+        print_error "xl2tpd服务重启失败"
+    fi
+}
+
+uninstall_vpn() {
+    echo ""
+    print_warning "警告: 此操作将卸载VPN服务并删除所有配置文件"
+    read -p "确认卸载? (yes/no): " CONFIRM
+    
+    if [[ "$CONFIRM" != "yes" ]]; then
+        print_info "已取消卸载操作"
+        return
+    fi
+    
+    print_info "停止服务..."
+    systemctl stop strongswan 2>/dev/null || systemctl stop ipsec
+    systemctl stop xl2tpd
+    systemctl disable strongswan 2>/dev/null || systemctl disable ipsec
+    systemctl disable xl2tpd
+    
+    print_info "删除配置文件..."
+    rm -f /etc/ipsec.conf
+    rm -f /etc/ipsec.secrets
+    rm -f /etc/xl2tpd/xl2tpd.conf
+    rm -f /etc/ppp/options.xl2tpd
+    rm -f /etc/ppp/chap-secrets
+    rm -f /root/vpn_config.txt
+    
+    print_info "清理防火墙规则..."
+    iptables -D INPUT -p udp --dport 500 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -p udp --dport 4500 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -p udp --dport 1701 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -p esp -j ACCEPT 2>/dev/null
+    
+    print_info "VPN已卸载完成"
+}
+
+config_menu() {
+    check_root
+    set +e
+    
+    while true; do
+        clear
+        echo "=========================================="
+        echo "      L2TP/IPsec VPN 配置管理"
+        echo "=========================================="
+        echo ""
+        echo "  【用户管理】"
+        echo "  1. 添加VPN用户"
+        echo "  2. 删除VPN用户"
+        echo "  3. 修改用户密码"
+        echo "  4. 查看所有用户"
+        echo ""
+        echo "  【配置管理】"
+        echo "  5. 查看当前配置"
+        echo "  6. 修改PSK密钥"
+        echo "  7. 修改L2TP配置 (IP池/本地IP)"
+        echo "  8. 修改DNS服务器"
+        echo "  9. 修改MTU/MRU"
+        echo ""
+        echo "  【服务管理】"
+        echo "  10. 查看服务状态"
+        echo "  11. 重启VPN服务"
+        echo "  12. 卸载VPN"
+        echo ""
+        echo "  0. 退出"
+        echo ""
+        echo "=========================================="
+        read -p "请选择操作 [0-12]: " choice
+        
+        case $choice in
+            1)
+                echo ""
+                add_vpn_user
+                read -p "按回车键继续..."
+                ;;
+            2)
+                delete_vpn_user
+                read -p "按回车键继续..."
+                ;;
+            3)
+                modify_vpn_password
+                read -p "按回车键继续..."
+                ;;
+            4)
+                list_vpn_users
+                read -p "按回车键继续..."
+                ;;
+            5)
+                show_current_config
+                read -p "按回车键继续..."
+                ;;
+            6)
+                echo ""
+                modify_psk
+                read -p "按回车键继续..."
+                ;;
+            7)
+                modify_l2tp_config
+                read -p "按回车键继续..."
+                ;;
+            8)
+                modify_dns
+                read -p "按回车键继续..."
+                ;;
+            9)
+                echo ""
+                modify_mtu
+                read -p "按回车键继续..."
+                ;;
+            10)
+                show_vpn_status
+                read -p "按回车键继续..."
+                ;;
+            11)
+                echo ""
+                restart_vpn_services
+                read -p "按回车键继续..."
+                ;;
+            12)
+                uninstall_vpn
+                read -p "按回车键继续..."
+                ;;
+            0)
+                print_info "退出配置管理"
+                exit 0
+                ;;
+            *)
+                print_error "无效的选择"
+                sleep 1
+                ;;
+        esac
+    done
+}
+
+main() {
+    clear
+    echo "=========================================="
+    echo "  L2TP/IPsec VPN 一键安装脚本"
+    echo "=========================================="
+    echo ""
+    
+    check_root
+    detect_os
+    get_public_ip
+    get_user_input
+    
+    echo ""
+    print_info "开始安装和配置VPN服务器..."
+    echo ""
+    
+    if [[ "$OS" == "ubuntu" || "$OS" == "debian" ]]; then
+        install_packages_debian
+    elif [[ "$OS" == "centos" || "$OS" == "rhel" ]]; then
+        install_packages_centos
+    else
+        print_error "不支持的操作系统: $OS"
+        exit 1
+    fi
+    
+    configure_ipsec
+    configure_xl2tpd
+    configure_sysctl
+    configure_firewall
+    start_services
+    show_config
+    
+    echo ""
+    print_info "安装完成！请使用上述配置信息连接VPN"
+    echo ""
+    print_info "配置管理命令:"
+    echo "  - 进入配置菜单: bash $0 --config"
+    echo "  - 添加用户:     bash $0 --add-user"
+    echo "  - 查看帮助:     bash $0 --help"
+    echo ""
+}
+
+case "$1" in
+    --config|--manage|-m)
+        config_menu
+        ;;
+    --add-user)
+        check_root
+        add_vpn_user
+        ;;
+    --delete-user)
+        check_root
+        delete_vpn_user
+        ;;
+    --list-users)
+        check_root
+        list_vpn_users
+        ;;
+    --show-config)
+        check_root
+        show_current_config
+        ;;
+    --status)
+        check_root
+        show_vpn_status
+        ;;
+    --restart)
+        check_root
+        restart_vpn_services
+        ;;
+    --uninstall)
+        check_root
+        uninstall_vpn
+        ;;
+    --modify-l2tp)
+        check_root
+        modify_l2tp_config
+        ;;
+    --modify-dns)
+        check_root
+        modify_dns
+        ;;
+    --modify-mtu)
+        check_root
+        modify_mtu
+        ;;
+    --modify-psk)
+        check_root
+        modify_psk
+        ;;
+    --help|-h)
+        echo "L2TP/IPsec VPN 一键安装脚本"
+        echo ""
+        echo "用法: bash $0 [选项]"
+        echo ""
+        echo "选项:"
+        echo "  (无参数)          安装并配置VPN服务器"
+        echo ""
+        echo "  【管理菜单】"
+        echo "  --config, -m      进入配置管理菜单"
+        echo ""
+        echo "  【用户管理】"
+        echo "  --add-user        添加VPN用户"
+        echo "  --delete-user     删除VPN用户"
+        echo "  --list-users      查看所有用户"
+        echo ""
+        echo "  【配置管理】"
+        echo "  --show-config     查看当前配置"
+        echo "  --modify-l2tp     修改L2TP配置"
+        echo "  --modify-dns      修改DNS服务器"
+        echo "  --modify-mtu      修改MTU/MRU"
+        echo "  --modify-psk      修改PSK密钥"
+        echo ""
+        echo "  【服务管理】"
+        echo "  --status          查看服务状态"
+        echo "  --restart         重启VPN服务"
+        echo "  --uninstall       卸载VPN服务"
+        echo ""
+        echo "  --help, -h        显示此帮助信息"
+        echo ""
+        ;;
+    *)
+        main
+        ;;
+esac
