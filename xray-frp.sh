@@ -272,7 +272,7 @@ modify_xray_port() {
         SHORTID=$(grep -oP '"shortIds": *\[ *"\K[^"]+' /usr/local/etc/xray/config.json)
         PRIVATE_KEY=$(grep -oP '"privateKey": *"\K[^"]+' /usr/local/etc/xray/config.json)
     fi
-    PUBLIC_KEY="1A8ttanG5p970QYWyVoABiHoXYoPL-DrVFd3flFxPCo"
+    PUBLIC_KEY="sn5cQsnGAxadThor3_U5fIFafC24rA0-OrA3vQj06onU"
     REGION="$(curl -s "https://ipinfo.io/$(curl -s ifconfig.me)/country")"
     [ -z "$REGION" ] && REGION="CN"
     REGION_CN=${COUNTRY_MAP[$REGION]}
@@ -320,7 +320,7 @@ show_xray_link() {
         PORT=$(grep -oP '"port": *\K[0-9]+' /usr/local/etc/xray/config.json | head -1)
         NET=$(grep -oP '"network": *"\K[^"]+' /usr/local/etc/xray/config.json)
     fi
-    PUBLIC_KEY="1A8ttanG5p970QYWyVoABiHoXYoPL-DrVFd3flFxPCo"
+    PUBLIC_KEY="sn5cQsnGAxadThor3_U5fIFafC24rA0-OrA3vQj06onU"
     DOMAIN=$(curl -s ifconfig.me)
     REGION="$(curl -s "https://ipinfo.io/$DOMAIN/country")"
     REGION_CN=${COUNTRY_MAP[$REGION]}
