@@ -152,7 +152,7 @@ install_xray() {
     SHORTID="abcdef12"
     UUID="9e264d67-fe47-4d2f-b55e-631a12e46a30"
     PRIVATE_KEY="SBznh0LAR5I-Xo2XDMAJrCC_UoS1Wb7gjycfKTFyZmA"
-    PUBLIC_KEY="1A8ttanG5p970QYWyVoABiHoXYoPL-DrVFd3flFxPCo"
+    PUBLIC_KEY="sn5cQsnGAxadThor3_U5fIFafC24rA0-OrA3vQj06onU"
     PORT=443
     FLOW="xtls-rprx-vision"
     SNI="dash.cloudflare.com"
