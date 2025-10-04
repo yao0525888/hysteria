@@ -12,11 +12,6 @@ declare -A COUNTRY_MAP=(
     ["NO"]="挪威" ["FI"]="芬兰" ["DK"]="丹麦" ["CH"]="瑞士" ["ES"]="西班牙" ["PT"]="葡萄牙"
     ["AT"]="奥地利" ["BE"]="比利时" ["IE"]="爱尔兰" ["PL"]="波兰" ["NZ"]="新西兰" ["MX"]="墨西哥"
     ["ID"]="印度尼西亚" ["TH"]="泰国" ["VN"]="越南" ["MY"]="马来西亚" ["PH"]="菲律宾"
-    ["TR"]="土耳其" ["AE"]="阿联酋" ["SA"]="沙特阿拉伯" ["ZA"]="南非" ["IL"]="以色列" 
-    ["UA"]="乌克兰" ["GR"]="希腊" ["CZ"]="捷克" ["HU"]="匈牙利" ["RO"]="罗马尼亚" 
-    ["BG"]="保加利亚" ["HR"]="克罗地亚" ["RS"]="塞尔维亚" ["EE"]="爱沙尼亚" ["LV"]="拉脱维亚"
-    ["LT"]="立陶宛" ["SK"]="斯洛伐克" ["SI"]="斯洛文尼亚" ["IS"]="冰岛" ["LU"]="卢森堡"
-    ["UK"]="英国"
 )
 FRP_VERSION="v0.62.0"
 FRPS_PORT="7006"
@@ -62,6 +57,12 @@ uninstall_frps() {
 }
 install_frps() {
     log_step "1" "2" "安装FRPS服务..."
+    if ! command -v wget >/dev/null 2>&1; then
+        log_error "wget 未安装，请先安装wget: apt-get install wget 或 yum install wget"
+    fi
+    if netstat -tuln | grep -q ":7006 "; then
+        log_error "端口 7006 已被占用，请先释放该端口或修改FRPS_PORT变量"
+    fi
     uninstall_frps
     local FRP_NAME="frp_${FRP_VERSION#v}_linux_amd64"
     local FRP_FILE="${FRP_NAME}.tar.gz"
@@ -86,10 +87,6 @@ install_frps() {
         echo "bindPort = 7006"
         echo "auth.method = \"token\""
         echo "auth.token = \"$FRPS_TOKEN\""
-        echo ""
-        echo "[log]"
-        echo "level = \"silent\""
-        echo "disableLogColor = true"
     } > /etc/frp/frps.toml || exit 1
     {
         echo "[Unit]"
@@ -107,7 +104,14 @@ install_frps() {
         exit 1
     fi
     if ! systemctl enable --now frps >/dev/null 2>&1; then
-        systemctl status frps
+        echo -e "${RED}FRPS启动失败，检查详细信息：${NC}"
+        systemctl status frps --no-pager
+        echo -e "${YELLOW}配置文件内容：${NC}"
+        cat /etc/frp/frps.toml
+        echo -e "${YELLOW}端口占用情况：${NC}"
+        netstat -tuln | grep 7006 || echo "端口7006未被占用"
+        echo -e "${YELLOW}FRPS二进制文件：${NC}"
+        ls -la /usr/local/frp/frps
         exit 1
     fi
     log_success "FRPS安装成功"
@@ -150,7 +154,6 @@ install_xray() {
     PRIVATE_KEY="SBznh0LAR5I-Xo2XDMAJrCC_UoS1Wb7gjycfKTFyZmA"
     PUBLIC_KEY="1A8ttanG5p970QYWyVoABiHoXYoPL-DrVFd3flFxPCo"
     PORT=443
-    ALPN="h2"
     FLOW="xtls-rprx-vision"
     SNI="dash.cloudflare.com"
     DOMAIN=$(curl -s ifconfig.me)
@@ -198,10 +201,7 @@ install_xray() {
   "outbounds": [
     {
       "protocol": "freedom",
-      "tag": "direct",
-      "settings": {
-        "domainStrategy": "UseIPv4"
-      }
+      "tag": "direct"
     },
     {
       "protocol": "blackhole",
@@ -238,7 +238,7 @@ show_results() {
     echo -e "FRPS 密码: $FRPS_TOKEN"
     echo -e "TCP端口: 7006"
     echo -e "\n${YELLOW}>>> Xray Reality 分享链接：${NC}"
-    LINK="vless://$UUID@$DOMAIN:$PORT?encryption=none&flow=$FLOW&security=reality&sni=$SNI&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORTID&type=tcp&alpn=$ALPN#$REGION"
+    LINK="vless://$UUID@$DOMAIN:$PORT?encryption=none&flow=$FLOW&security=reality&sni=$SNI&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORTID&type=tcp#$REGION"
     echo -e "${GREEN}$LINK${NC}\n"
 }
 uninstall_xray() {
@@ -256,17 +256,14 @@ uninstall_xray() {
 modify_xray_port() {
     log_step "1" "1" "修改Xray端口..."
     read -p "请输入新的端口号(1-65535): " NEW_PORT
-    
     if ! [[ "$NEW_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_PORT" -lt 1 ] || [ "$NEW_PORT" -gt 65535 ]; then
         log_error "无效的端口号，请输入1-65535之间的数字"
     fi
-    
     if netstat -tuln | grep -q ":$NEW_PORT "; then
         log_error "端口 $NEW_PORT 已被占用"
     fi
-    
     sed -i "s/\"port\": [0-9]*/\"port\": $NEW_PORT/" /usr/local/etc/xray/config.json
-    
+    sed -i "s/$SNI:[0-9]*/$SNI:$NEW_PORT/" /usr/local/etc/xray/config.json
     if command -v jq >/dev/null 2>&1; then
         UUID=$(jq -r '.inbounds[0].settings.clients[0].id' /usr/local/etc/xray/config.json)
         FLOW=$(jq -r '.inbounds[0].settings.clients[0].flow' /usr/local/etc/xray/config.json)
@@ -281,18 +278,14 @@ modify_xray_port() {
         PRIVATE_KEY=$(grep -oP '"privateKey": *"\K[^"]+' /usr/local/etc/xray/config.json)
     fi
     PUBLIC_KEY="1A8ttanG5p970QYWyVoABiHoXYoPL-DrVFd3flFxPCo"
-    ALPN="h2"
     REGION="$(curl -s "https://ipinfo.io/$(curl -s ifconfig.me)/country")"
     [ -z "$REGION" ] && REGION="CN"
     REGION_CN=${COUNTRY_MAP[$REGION]}
     [ -z "$REGION_CN" ] && REGION_CN="$REGION"
-    
     systemctl restart xray
-    
     PORT=$NEW_PORT
     DOMAIN=$(curl -s ifconfig.me)
-    LINK="vless://$UUID@$DOMAIN:$PORT?encryption=none&flow=$FLOW&security=reality&sni=$SNI&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORTID&type=tcp&alpn=$ALPN#$REGION_CN"
-    
+    LINK="vless://$UUID@$DOMAIN:$PORT?encryption=none&flow=$FLOW&security=reality&sni=$SNI&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORTID&type=tcp#$REGION_CN"
     log_success "Xray端口已修改为: $NEW_PORT"
     echo -e "\n${YELLOW}>>> 新的Xray Reality分享链接：${NC}"
     echo -e "${GREEN}$LINK${NC}\n"
@@ -333,12 +326,11 @@ show_xray_link() {
         NET=$(grep -oP '"network": *"\K[^"]+' /usr/local/etc/xray/config.json)
     fi
     PUBLIC_KEY="1A8ttanG5p970QYWyVoABiHoXYoPL-DrVFd3flFxPCo"
-    ALPN="h2"
     DOMAIN=$(curl -s ifconfig.me)
     REGION="$(curl -s "https://ipinfo.io/$DOMAIN/country")"
     REGION_CN=${COUNTRY_MAP[$REGION]}
     [ -z "$REGION_CN" ] && REGION_CN="$REGION"
-    LINK="vless://$UUID@$DOMAIN:$PORT?encryption=none&flow=$FLOW&security=reality&sni=$SNI&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORTID&type=$NET&alpn=$ALPN#$REGION_CN"
+    LINK="vless://$UUID@$DOMAIN:$PORT?encryption=none&flow=$FLOW&security=reality&sni=$SNI&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORTID&type=$NET#$REGION_CN"
     echo -e "\n${YELLOW}>>> 当前Xray Reality分享链接：${NC}"
     echo -e "${GREEN}$LINK${NC}\n"
 }
