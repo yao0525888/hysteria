@@ -14,6 +14,7 @@ declare -A COUNTRY_MAP=(
     ["ID"]="印度尼西亚" ["TH"]="泰国" ["VN"]="越南" ["MY"]="马来西亚" ["PH"]="菲律宾"
 )
 FRP_VERSION="v0.62.0"
+XRAY_VERSION="v25.9.11"
 FRPS_PORT="7006"
 SILENT_MODE=true
 gen_frps_token() {
@@ -120,15 +121,8 @@ install_xray() {
         armv7l) ARCH="arm32-v7a" ;;
         *) log_error "不支持的架构" ;;
     esac
-    if command -v jq >/dev/null 2>&1; then
-        VER=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r .tag_name)
-    else
-        VER=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | grep '"tag_name"' | head -n 1 | cut -d '"' -f 4)
-    fi
-    if [ -z "$VER" ]; then
-        log_error "获取 Xray 版本号失败"
-    fi
-    log_info "Xray 最新版本号: $VER"
+    VER=$XRAY_VERSION
+    log_info "Xray 版本号: $VER"
     URL="https://github.com/XTLS/Xray-core/releases/download/$VER/Xray-linux-$ARCH.zip"
     wget -q -O xray.zip $URL
     if [ ! -s xray.zip ]; then
