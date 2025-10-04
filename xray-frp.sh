@@ -141,7 +141,7 @@ install_xray() {
     SHORTID="abcdef12"
     UUID="9e264d67-fe47-4d2f-b55e-631a12e46a30"
     PRIVATE_KEY="SBznh0LAR5I-Xo2XDMAJrCC_UoS1Wb7gjycfKTFyZmA"
-    PUBLIC_KEY="sn5cQsnGAxadThor3_U5fIFafC24rA0-OrA3vQj06onU"
+    PUBLIC_KEY="n5cQsnGAxadThor3_U5fIFafC24rA0-OrA3vQj06onU"
     PORT=443
     FLOW="xtls-rprx-vision"
     SNI="dash.cloudflare.com"
@@ -266,7 +266,7 @@ modify_xray_port() {
         SHORTID=$(grep -oP '"shortIds": *\[ *"\K[^"]+' /usr/local/etc/xray/config.json)
         PRIVATE_KEY=$(grep -oP '"privateKey": *"\K[^"]+' /usr/local/etc/xray/config.json)
     fi
-    PUBLIC_KEY="sn5cQsnGAxadThor3_U5fIFafC24rA0-OrA3vQj06onU"
+    PUBLIC_KEY="n5cQsnGAxadThor3_U5fIFafC24rA0-OrA3vQj06onU"
     REGION="$(curl -s "https://ipinfo.io/$(curl -s ifconfig.me)/country")"
     [ -z "$REGION" ] && REGION="CN"
     REGION_CN=${COUNTRY_MAP[$REGION]}
@@ -314,7 +314,7 @@ show_xray_link() {
         PORT=$(grep -oP '"port": *\K[0-9]+' /usr/local/etc/xray/config.json | head -1)
         NET=$(grep -oP '"network": *"\K[^"]+' /usr/local/etc/xray/config.json)
     fi
-    PUBLIC_KEY="sn5cQsnGAxadThor3_U5fIFafC24rA0-OrA3vQj06onU"
+    PUBLIC_KEY="n5cQsnGAxadThor3_U5fIFafC24rA0-OrA3vQj06onU"
     DOMAIN=$(curl -s ifconfig.me)
     REGION="$(curl -s "https://ipinfo.io/$DOMAIN/country")"
     REGION_CN=${COUNTRY_MAP[$REGION]}
