@@ -84,8 +84,8 @@ install_hy2() {
 
     mkdir -p /etc/hysteria
 
-    wget -O /etc/hysteria/cert.crt https://github.com/yao0525888/hysteria/releases/download/hysteria2/cert.crt
-    wget -O /etc/hysteria/private.key https://github.com/yao0525888/hysteria/releases/download/hysteria2/private.key
+    wget -O /etc/hysteria/cert.crt https://github.com/yao0525888/hysteria/releases/download/v1/cert.crt
+    wget -O /etc/hysteria/private.key https://github.com/yao0525888/hysteria/releases/download/v1/private.key
     chmod 644 /etc/hysteria/cert.crt /etc/hysteria/private.key
 
     cat << EOF > /etc/hysteria/config.yaml
@@ -215,7 +215,6 @@ EOF
     fi
 }
 
-# 卸载Hysteria2
 uninstall_hy2() {
     systemctl stop hysteria-server >/dev/null 2>&1
     systemctl disable hysteria-server >/dev/null 2>&1
@@ -322,7 +321,6 @@ menu() {
     esac
 }
 
-# 修改端口函数
 change_port() {
     read -rp "请输入新的端口号: " new_port
     if [[ ! $new_port =~ ^[0-9]+$ ]] || [[ $new_port -lt 1 ]] || [[ $new_port -gt 65535 ]]; then
