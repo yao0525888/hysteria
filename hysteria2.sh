@@ -142,6 +142,10 @@ fastOpen: true
 socks5:
   listen: 127.0.0.1:5678
 
+dns:
+  servers:
+    - 114.114.114.114
+    - 8.8.8.8
 transport:
   udp:
     hopInterval: 30s 
@@ -164,6 +168,12 @@ EOF
   "socks5": {
     "listen": "127.0.0.1:5678"
   },
+  "dns": {
+    "servers": [
+      "114.114.114.114",
+      "8.8.8.8",
+    ]
+  },
   "transport": {
     "udp": {
       "hopInterval": "30s"
@@ -174,6 +184,21 @@ EOF
 
     url="hysteria2://$HY_PASSWORD@$last_ip:$HYSTERIA_PORT/?insecure=1&sni=$MASQUERADE_HOST#$node_name"
     echo $url > /root/hy/url.txt
+
+    cat > /etc/systemd/system/hysteria-server.service << EOF
+[Unit]
+Description=Hysteria 2 Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/hysteria server -c /etc/hysteria/config.yaml
+Restart=on-failure
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
 
     systemctl daemon-reload
     systemctl enable hysteria-server > /dev/null 2>&1
