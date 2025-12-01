@@ -142,10 +142,6 @@ fastOpen: true
 socks5:
   listen: 127.0.0.1:5678
 
-dns:
-  servers:
-    - 114.114.114.114
-    - 8.8.8.8
 transport:
   udp:
     hopInterval: 30s 
@@ -167,12 +163,6 @@ EOF
   },
   "socks5": {
     "listen": "127.0.0.1:5678"
-  },
-  "dns": {
-    "servers": [
-      "114.114.114.114",
-      "8.8.8.8",
-    ]
   },
   "transport": {
     "udp": {
