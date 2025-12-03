@@ -13,19 +13,23 @@ show_menu() {
     echo "请选择操作："
     echo "  1) 安装后端服务"
     echo "  2) 修改 API Key"
-    echo "  3) 查看当前配置"
-    echo "  4) 卸载后端服务"
-    echo "  5) 退出"
+    echo "  3) 修改 Hysteria2 密码"
+    echo "  4) 修改 Xray UUID"
+    echo "  5) 查看当前配置"
+    echo "  6) 卸载后端服务"
+    echo "  7) 退出"
     echo ""
-    echo -n "请输入选项 [1-5]: "
+    echo -n "请输入选项 [1-7]: "
     read -r choice
     
     case "$choice" in
         1) install_backend ;;
         2) change_api_key ;;
-        3) show_config ;;
-        4) uninstall_backend ;;
-        5) echo "退出"; exit 0 ;;
+        3) change_hysteria_password ;;
+        4) change_xray_uuid ;;
+        5) show_config ;;
+        6) uninstall_backend ;;
+        7) echo "退出"; exit 0 ;;
         *) echo "无效选项"; sleep 2; show_menu ;;
     esac
 }
@@ -75,6 +79,132 @@ change_api_key() {
         echo "新的 API Key: $NEW_API_KEY"
         echo ""
         echo "请更新客户端脚本中的 API_KEY 变量"
+    else
+        echo "已取消"
+    fi
+    
+    echo ""
+    echo -n "按回车键继续..."
+    read
+    show_menu
+}
+
+change_hysteria_password() {
+    clear
+    echo "========================================="
+    echo "  修改 Hysteria2 密码"
+    echo "========================================="
+    echo ""
+    
+    if [ ! -f "$PROJECT_DIR/backend/.env" ]; then
+        echo "✗ 后端服务未安装"
+        echo "请先安装后端服务"
+        sleep 3
+        show_menu
+        return
+    fi
+    
+    echo "当前 Hysteria2 密码:"
+    OLD_PASSWORD=$(grep "^HYSTERIA_PASSWORD=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
+    echo "$OLD_PASSWORD"
+    echo ""
+    echo -n "请输入新的 Hysteria2 密码 (直接回车生成随机 UUID): "
+    read -r NEW_PASSWORD
+    
+    if [ -z "$NEW_PASSWORD" ]; then
+        if command -v uuidgen &> /dev/null; then
+            NEW_PASSWORD=$(uuidgen)
+        elif [ -f /proc/sys/kernel/random/uuid ]; then
+            NEW_PASSWORD=$(cat /proc/sys/kernel/random/uuid)
+        else
+            hex=$(openssl rand -hex 16)
+            NEW_PASSWORD="${hex:0:8}-${hex:8:4}-${hex:12:4}-${hex:16:4}-${hex:20:12}"
+        fi
+        echo "已生成随机 UUID 格式密码: $NEW_PASSWORD"
+    fi
+    
+    echo ""
+    echo -n "确认修改 Hysteria2 密码？(y/n): "
+    read -r confirm
+    
+    if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+        sed -i "s/^HYSTERIA_PASSWORD=.*/HYSTERIA_PASSWORD=$NEW_PASSWORD/" $PROJECT_DIR/backend/.env
+        echo "$NEW_PASSWORD" > /root/pi-network-hysteria-password.txt
+        
+        systemctl restart pi-network-backend
+        
+        echo ""
+        echo "✓ Hysteria2 密码已更新"
+        echo "✓ 后端服务已重启"
+        echo "✓ 密码已保存到: /root/pi-network-hysteria-password.txt"
+        echo ""
+        echo "新的 Hysteria2 密码: $NEW_PASSWORD"
+        echo ""
+        echo "注意: 修改密码后，需要重新部署客户端配置才能生效"
+        echo "客户端需要重新运行安装脚本或更新配置文件"
+    else
+        echo "已取消"
+    fi
+    
+    echo ""
+    echo -n "按回车键继续..."
+    read
+    show_menu
+}
+
+change_xray_uuid() {
+    clear
+    echo "========================================="
+    echo "  修改 Xray UUID"
+    echo "========================================="
+    echo ""
+    
+    if [ ! -f "$PROJECT_DIR/backend/.env" ]; then
+        echo "✗ 后端服务未安装"
+        echo "请先安装后端服务"
+        sleep 3
+        show_menu
+        return
+    fi
+    
+    echo "当前 Xray UUID:"
+    OLD_UUID=$(grep "^XRAY_UUID=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
+    echo "$OLD_UUID"
+    echo ""
+    echo -n "请输入新的 Xray UUID (直接回车生成随机 UUID): "
+    read -r NEW_UUID
+    
+    if [ -z "$NEW_UUID" ]; then
+        if command -v uuidgen &> /dev/null; then
+            NEW_UUID=$(uuidgen)
+        elif [ -f /proc/sys/kernel/random/uuid ]; then
+            NEW_UUID=$(cat /proc/sys/kernel/random/uuid)
+        else
+            hex=$(openssl rand -hex 16)
+            NEW_UUID="${hex:0:8}-${hex:8:4}-${hex:12:4}-${hex:16:4}-${hex:20:12}"
+        fi
+        echo "已生成随机 UUID: $NEW_UUID"
+    fi
+    
+    echo ""
+    echo -n "确认修改 Xray UUID？(y/n): "
+    read -r confirm
+    
+    if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+        sed -i "s/^XRAY_UUID=.*/XRAY_UUID=$NEW_UUID/" $PROJECT_DIR/backend/.env
+        echo "$NEW_UUID" > /root/pi-network-xray-uuid.txt
+        
+        systemctl restart pi-network-backend
+        
+        echo ""
+        echo "✓ Xray UUID 已更新"
+        echo "✓ 后端服务已重启"
+        echo "✓ UUID 已保存到: /root/pi-network-xray-uuid.txt"
+        echo ""
+        echo "新的 Xray UUID: $NEW_UUID"
+        echo ""
+        echo "注意: 修改 UUID 后，需要重新部署客户端配置才能生效"
+        echo "客户端需要重新运行安装脚本或更新配置文件"
     else
         echo "已取消"
     fi
@@ -167,12 +297,10 @@ show_config() {
     PORT=$(grep "^PORT=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
     ENABLE_LIMIT=$(grep "^ENABLE_LIMIT=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
     
-    # Hysteria 2 配置
     HYSTERIA_PORT=$(grep "^HYSTERIA_PORT=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
     HYSTERIA_PASSWORD=$(grep "^HYSTERIA_PASSWORD=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
     HYSTERIA_MASQUERADE_HOST=$(grep "^HYSTERIA_MASQUERADE_HOST=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
     
-    # Xray 配置
     XRAY_VERSION=$(grep "^XRAY_VERSION=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
     XRAY_FRP_PORT=$(grep "^XRAY_FRP_PORT=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
     XRAY_FRP_TOKEN=$(grep "^XRAY_FRP_TOKEN=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
