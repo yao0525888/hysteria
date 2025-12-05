@@ -13,17 +13,17 @@ GREEN="$(printf '\033[32m')"
 RESET="$(printf '\033[0m')"
 
 need_root() { [ "$(id -u)" -eq 0 ] || { echo "请用 root 运行"; exit 1; }; }
-ok() { echo -e "[OK] $*"; }
+ok() { :; }
 fail() { echo -e "[ERR] $*" >&2; exit 1; }
 
 install_xui() {
   need_root
   if command -v apt >/dev/null 2>&1; then
-    apt update
-    apt install -y curl wget tar
+    apt update >/dev/null 2>&1
+    apt install -y curl wget tar >/dev/null 2>&1
   elif command -v yum >/dev/null 2>&1; then
-    yum install -y epel-release
-    yum install -y curl wget tar
+    yum install -y epel-release >/dev/null 2>&1
+    yum install -y curl wget tar >/dev/null 2>&1
   else
     fail "未检测到 apt 或 yum，请手动安装 curl/wget/tar"
   fi
@@ -33,8 +33,8 @@ install_xui() {
   mkdir -p "$INSTALL_DIR"
   cd "$INSTALL_DIR"
   tmp_tar="/tmp/x-ui.tar.gz"
-  wget -O "$tmp_tar" "$XUI_BIN_URL"
-  tar -xzf "$tmp_tar" -C "$INSTALL_DIR"
+  wget -q -O "$tmp_tar" "$XUI_BIN_URL"
+  tar -xzf "$tmp_tar" -C "$INSTALL_DIR" >/dev/null 2>&1
   chmod +x "${BIN_PATH}"
   ok "x-ui 下载并解压完成"
 
@@ -55,10 +55,10 @@ WantedBy=multi-user.target
 EOF
 
   systemctl daemon-reload
-  systemctl enable ${SERVICE_NAME}
+  systemctl enable ${SERVICE_NAME} >/dev/null 2>&1
   ok "systemd 服务创建完成"
 
-  systemctl restart ${SERVICE_NAME}
+  systemctl restart ${SERVICE_NAME} >/dev/null 2>&1
   sleep 2
   if ! systemctl is-active --quiet ${SERVICE_NAME}; then
     echo "[ERR] 服务启动失败，最近日志："
@@ -67,8 +67,8 @@ EOF
   fi
   ok "服务已启动"
 
-  ${BIN_PATH} setting -port ${XUI_PORT} -username "${XUI_USER}" -password "${XUI_PASS}"
-  systemctl restart ${SERVICE_NAME}
+  ${BIN_PATH} setting -port ${XUI_PORT} -username "${XUI_USER}" -password "${XUI_PASS}" >/dev/null 2>&1
+  systemctl restart ${SERVICE_NAME} >/dev/null 2>&1
   ok "账号与端口已配置：${XUI_USER}/${XUI_PASS} @ ${XUI_PORT}"
 
   PUBLIC_IP="$(curl -4 -s https://api.ipify.org || curl -s https://ifconfig.me || echo "未获取公网IP")"
