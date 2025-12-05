@@ -73,14 +73,11 @@ EOF
 
   PUBLIC_IP="$(curl -4 -s https://api.ipify.org || curl -s https://ifconfig.me || echo "未获取公网IP")"
   cat <<INFO
------------------------------
 x-ui 已安装并运行
 面板地址: ${GREEN}http://${PUBLIC_IP}:${XUI_PORT}${RESET}
 用户名: ${GREEN}${XUI_USER}${RESET}
 密码: ${GREEN}${XUI_PASS}${RESET}
-服务管理: systemctl {start|stop|restart|status} ${SERVICE_NAME}
-文件路径: ${INSTALL_DIR}
------------------------------
+
 INFO
 }
 
