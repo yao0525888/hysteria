@@ -4,9 +4,10 @@ RED="\033[31m"
 GREEN="\033[32m"
 YELLOW="\033[33m"
 PLAIN="\033[0m"
-HYSTERIA_PORT=7007
+HYSTERIA_PORT=8443
 MASQUERADE_HOST=www.bing.com
 HY_PASSWORD=9e264d67-fe47-4d2f-b55e-631a12e46a30
+HY_OBFS_PASSWORD=wGW1duwjo7gWV0F4aqJu44jJBG4ELk3WNgbs3ATJu3M
 red(){ echo -e "\033[31m\033[01m$1\033[0m"; }
 green(){ echo -e "\033[32m\033[01m$1\033[0m"; }
 yellow(){ echo -e "\033[33m\033[01m$1\033[0m"; }
@@ -101,9 +102,14 @@ quic:
   initConnReceiveWindow: 33554432
   maxConnReceiveWindow: 33554432
 
+obfs:
+  type: salamander
+  salamander:
+    password: "$HY_OBFS_PASSWORD"
+
 auth:
   type: password
-  password: $HY_PASSWORD
+  password: "$HY_PASSWORD"
 
 masquerade:
   type: proxy
@@ -125,7 +131,14 @@ EOF
     cat << EOF > /root/hy/hy-client.yaml
 server: $last_ip:$HYSTERIA_PORT
 
-auth: $HY_PASSWORD
+auth:
+  type: password
+  password: "$HY_PASSWORD"
+
+obfs:
+  type: salamander
+  salamander:
+    password: "$HY_OBFS_PASSWORD"
 
 tls:
   sni: $MASQUERADE_HOST
@@ -150,7 +163,16 @@ EOF
     cat << EOF > /root/hy/hy-client.json
 {
   "server": "$last_ip:$HYSTERIA_PORT",
-  "auth": "$HY_PASSWORD",
+  "auth": {
+    "type": "password",
+    "password": "$HY_PASSWORD"
+  },
+  "obfs": {
+    "type": "salamander",
+    "salamander": {
+      "password": "$HY_OBFS_PASSWORD"
+    }
+  },
   "tls": {
     "sni": "$MASQUERADE_HOST",
     "insecure": true
@@ -172,7 +194,7 @@ EOF
 }
 EOF
 
-    url="hysteria2://$HY_PASSWORD@$last_ip:$HYSTERIA_PORT/?insecure=1&sni=$MASQUERADE_HOST#$node_name"
+    url="hy2://$HY_PASSWORD@$last_ip:$HYSTERIA_PORT/?insecure=1&sni=$MASQUERADE_HOST&obfs=salamander&obfs-password=$HY_OBFS_PASSWORD#$node_name"
     echo $url > /root/hy/url.txt
 
     cat > /etc/systemd/system/hysteria-server.service << EOF
