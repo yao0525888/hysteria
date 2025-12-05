@@ -9,8 +9,8 @@ INSTALL_DIR="/usr/local/x-ui"
 APP_DIR="${INSTALL_DIR}/x-ui"
 BIN_PATH="${APP_DIR}/x-ui"
 SERVICE_NAME="x-ui"
-GREEN="\033[32m"
-RESET="\033[0m"
+GREEN="$(printf '\033[32m')"
+RESET="$(printf '\033[0m')"
 
 need_root() { [ "$(id -u)" -eq 0 ] || { echo "请用 root 运行"; exit 1; }; }
 ok() { echo -e "[OK] $*"; }
