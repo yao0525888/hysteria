@@ -95,12 +95,16 @@ listen: :$HYSTERIA_PORT
 tls:
   cert: /etc/hysteria/cert.crt
   key: /etc/hysteria/private.key
+  alpn: h3
 
 quic:
   initStreamReceiveWindow: 16777216
-  maxStreamReceiveWindow: 16777216
+  maxStreamReceiveWindow: 67108864
   initConnReceiveWindow: 33554432
-  maxConnReceiveWindow: 33554432
+  maxConnReceiveWindow: 134217728
+  maxIdleTimeout: 30s
+  maxIncomingStreams: 1024
+  disablePathMTUDiscovery: false
 
 obfs:
   type: salamander
@@ -116,6 +120,22 @@ masquerade:
   proxy:
     url: https://$MASQUERADE_HOST
     rewriteHost: true
+
+bandwidth:
+  up: 1 Gbps
+  down: 1 Gbps
+
+ignoreClientBandwidth: false
+
+resolver:
+  type: udp
+  tcp:
+    addr: 8.8.8.8:53
+    timeout: 4s
+  udp:
+    addr: 8.8.8.8:53
+    timeout: 4s
+    interval: 4s
 EOF
 
     if [[ -n $(echo $ip | grep ":") ]]; then
@@ -143,12 +163,16 @@ obfs:
 tls:
   sni: $MASQUERADE_HOST
   insecure: true
+  alpn: h3
 
 quic:
   initStreamReceiveWindow: 16777216
-  maxStreamReceiveWindow: 16777216
+  maxStreamReceiveWindow: 67108864
   initConnReceiveWindow: 33554432
-  maxConnReceiveWindow: 33554432
+  maxConnReceiveWindow: 134217728
+  maxIdleTimeout: 30s
+  keepAlivePeriod: 10s
+  disablePathMTUDiscovery: false
 
 fastOpen: true
 
@@ -157,7 +181,11 @@ socks5:
 
 transport:
   udp:
-    hopInterval: 30s 
+    hopInterval: 30s
+
+bandwidth:
+  up: 20 Mbps
+  down: 100 Mbps
 EOF
 
     cat << EOF > /root/hy/hy-client.json
@@ -175,13 +203,17 @@ EOF
   },
   "tls": {
     "sni": "$MASQUERADE_HOST",
-    "insecure": true
+    "insecure": true,
+    "alpn": "h3"
   },
   "quic": {
     "initStreamReceiveWindow": 16777216,
-    "maxStreamReceiveWindow": 16777216,
+    "maxStreamReceiveWindow": 67108864,
     "initConnReceiveWindow": 33554432,
-    "maxConnReceiveWindow": 33554432
+    "maxConnReceiveWindow": 134217728,
+    "maxIdleTimeout": "30s",
+    "keepAlivePeriod": "10s",
+    "disablePathMTUDiscovery": false
   },
   "socks5": {
     "listen": "127.0.0.1:5678"
@@ -190,6 +222,10 @@ EOF
     "udp": {
       "hopInterval": "30s"
     }
+  },
+  "bandwidth": {
+    "up": "20 Mbps",
+    "down": "100 Mbps"
   }
 }
 EOF
@@ -334,7 +370,7 @@ service_menu() {
 menu() {
     clear
     echo "#############################################################"
-    echo -e "#                 ${GREEN}Hysteria 2 一键配置脚本${PLAIN}                  #"
+    echo -e "#                 ${GREEN}Hysteria  一键配置脚本${PLAIN}                  #"
     echo "#############################################################"
     echo ""
     echo -e " ${GREEN}1.${PLAIN} 安装 Hysteria 2 (端口$HYSTERIA_PORT, 伪装$MASQUERADE_HOST, 自签证书)"
