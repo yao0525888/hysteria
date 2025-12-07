@@ -4,7 +4,7 @@ RED="\033[31m"
 GREEN="\033[32m"
 YELLOW="\033[33m"
 PLAIN="\033[0m"
-HYSTERIA_PORT=8443
+HYSTERIA_PORT=7007
 MASQUERADE_HOST=www.bing.com
 HY_PASSWORD=9e264d67-fe47-4d2f-b55e-631a12e46a30
 HY_OBFS_PASSWORD=wGW1duwjo7gWV0F4aqJu44jJBG4ELk3WNgbs3ATJu3M
@@ -349,21 +349,13 @@ restart_hy2() {
 
 show_config() {
     if [ ! -f "/root/hy/url.txt" ]; then
-        red "配置文件不存在"
+        red "分享链接不存在"
         return
     fi
 
     green "======================================================================================"
-    if [ -f "/root/hy/hy-client.yaml" ]; then
-        yellow "YAML配置文件 (/root/hy/hy-client.yaml):"
-        cat /root/hy/hy-client.yaml
-        echo ""
-    fi
-
-    if [ -f "/root/hy/url.txt" ]; then
-        yellow "分享链接:"
-        red "$(cat /root/hy/url.txt)"
-    fi
+    yellow "分享链接:"
+    red "$(cat /root/hy/url.txt)"
     green "======================================================================================"
 }
 
@@ -399,7 +391,7 @@ menu() {
     echo -e " ${RED}2.${PLAIN} 卸载 Hysteria 2"
     echo "------------------------------------------------------------"
     echo -e " ${GREEN}3.${PLAIN} 关闭、开启、重启 Hysteria 2"
-    echo -e " ${GREEN}4.${PLAIN} 显示 Hysteria 2 配置文件"
+    echo -e " ${GREEN}4.${PLAIN} 显示分享链接"
     echo "------------------------------------------------------------"
     echo -e " ${GREEN}5.${PLAIN} 修改端口"
     echo -e " ${GREEN}0.${PLAIN} 退出脚本"
