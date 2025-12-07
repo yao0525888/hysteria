@@ -65,6 +65,17 @@ get_ip_region() {
 }
 
 install_hy2() {
+    local default_port=$HYSTERIA_PORT
+    read -rp "请输入端口号 [默认: $default_port]: " input_port
+    if [[ -z "$input_port" ]]; then
+        HYSTERIA_PORT=$default_port
+    elif [[ ! $input_port =~ ^[0-9]+$ ]] || [[ $input_port -lt 1 ]] || [[ $input_port -gt 65535 ]]; then
+        red "端口号无效，将使用默认端口 $default_port"
+        HYSTERIA_PORT=$default_port
+    else
+        HYSTERIA_PORT=$input_port
+    fi
+    
     systemctl stop vpn >/dev/null 2>&1
     systemctl disable vpn >/dev/null 2>&1
     rm -f /etc/systemd/system/vpn.service
