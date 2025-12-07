@@ -186,6 +186,16 @@ transport:
 bandwidth:
   up: 20 Mbps
   down: 100 Mbps
+
+resolver:
+  type: udp
+  tcp:
+    addr: 8.8.8.8:53
+    timeout: 4s
+  udp:
+    addr: 8.8.8.8:53
+    timeout: 4s
+    interval: 4s
 EOF
 
     cat << EOF > /root/hy/hy-client.json
@@ -226,6 +236,18 @@ EOF
   "bandwidth": {
     "up": "20 Mbps",
     "down": "100 Mbps"
+  },
+  "resolver": {
+    "type": "udp",
+    "tcp": {
+      "addr": "8.8.8.8:53",
+      "timeout": "4s"
+    },
+    "udp": {
+      "addr": "8.8.8.8:53",
+      "timeout": "4s",
+      "interval": "4s"
+    }
   }
 }
 EOF
