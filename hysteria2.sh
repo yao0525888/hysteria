@@ -4,7 +4,7 @@ RED="\033[31m"
 GREEN="\033[32m"
 YELLOW="\033[33m"
 PLAIN="\033[0m"
-HYSTERIA_PORT=8443
+HYSTERIA_PORT=7007
 MASQUERADE_HOST=www.bing.com
 HY_PASSWORD=9e264d67-fe47-4d2f-b55e-631a12e46a30
 HY_OBFS_PASSWORD=wGW1duwjo7gWV0F4aqJu44jJBG4ELk3WNgbs3ATJu3M
@@ -354,7 +354,7 @@ menu() {
     echo -e "#                 ${GREEN}Hysteria 2 一键配置脚本${PLAIN}                  #"
     echo "#############################################################"
     echo ""
-    echo -e " ${GREEN}1.${PLAIN} 安装 Hysteria 2 (端口$HYSTERIA_PORT, 伪装$MASQUERADE_HOST, 自签证书)"
+    echo -e " ${GREEN}1.${PLAIN} 安装 Hysteria 2 (端口$HYSTERIA_PORT)"
     echo -e " ${RED}2.${PLAIN} 卸载 Hysteria 2"
     echo "------------------------------------------------------------"
     echo -e " ${GREEN}3.${PLAIN} 关闭、开启、重启 Hysteria 2"
