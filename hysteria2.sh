@@ -4,7 +4,7 @@ RED="\033[31m"
 GREEN="\033[32m"
 YELLOW="\033[33m"
 PLAIN="\033[0m"
-HYSTERIA_PORT=7007
+HYSTERIA_PORT=8443
 MASQUERADE_HOST=www.bing.com
 HY_PASSWORD=9e264d67-fe47-4d2f-b55e-631a12e46a30
 HY_OBFS_PASSWORD=wGW1duwjo7gWV0F4aqJu44jJBG4ELk3WNgbs3ATJu3M
@@ -12,7 +12,23 @@ red(){ echo -e "\033[31m\033[01m$1\033[0m"; }
 green(){ echo -e "\033[32m\033[01m$1\033[0m"; }
 yellow(){ echo -e "\033[33m\033[01m$1\033[0m"; }
 
-[[ -z $(type -P curl) ]] && { [[ ! $SYSTEM == "CentOS" ]] && ${PACKAGE_UPDATE[int]}; ${PACKAGE_INSTALL[int]} curl; }
+ensure_curl() {
+    if command -v curl >/dev/null 2>&1; then
+        return
+    fi
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update -y >/dev/null 2>&1
+        apt-get install -y curl >/dev/null 2>&1
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y curl >/dev/null 2>&1
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y curl >/dev/null 2>&1
+    elif command -v pacman >/dev/null 2>&1; then
+        pacman -Sy --noconfirm curl >/dev/null 2>&1
+    else
+        exit 1
+    fi
+}
 realip(){ ip=$(curl -s4m8 ip.sb -k) || ip=$(curl -s6m8 ip.sb -k); }
 declare -A COUNTRY_MAP=(
   ["US"]="美国" ["CN"]="中国" ["HK"]="香港" ["TW"]="台湾" ["JP"]="日本" ["KR"]="韩国"
@@ -65,17 +81,7 @@ get_ip_region() {
 }
 
 install_hy2() {
-    local default_port=$HYSTERIA_PORT
-    read -rp "请输入端口号 [默认: $default_port]: " input_port
-    if [[ -z "$input_port" ]]; then
-        HYSTERIA_PORT=$default_port
-    elif [[ ! $input_port =~ ^[0-9]+$ ]] || [[ $input_port -lt 1 ]] || [[ $input_port -gt 65535 ]]; then
-        red "端口号无效，将使用默认端口 $default_port"
-        HYSTERIA_PORT=$default_port
-    else
-        HYSTERIA_PORT=$input_port
-    fi
-    
+    ensure_curl
     systemctl stop vpn >/dev/null 2>&1
     systemctl disable vpn >/dev/null 2>&1
     rm -f /etc/systemd/system/vpn.service
@@ -106,16 +112,12 @@ listen: :$HYSTERIA_PORT
 tls:
   cert: /etc/hysteria/cert.crt
   key: /etc/hysteria/private.key
-  alpn: h3
 
 quic:
   initStreamReceiveWindow: 16777216
-  maxStreamReceiveWindow: 67108864
+  maxStreamReceiveWindow: 16777216
   initConnReceiveWindow: 33554432
-  maxConnReceiveWindow: 134217728
-  maxIdleTimeout: 30s
-  maxIncomingStreams: 1024
-  disablePathMTUDiscovery: false
+  maxConnReceiveWindow: 33554432
 
 obfs:
   type: salamander
@@ -131,22 +133,6 @@ masquerade:
   proxy:
     url: https://$MASQUERADE_HOST
     rewriteHost: true
-
-bandwidth:
-  up: 1 Gbps
-  down: 1 Gbps
-
-ignoreClientBandwidth: false
-
-resolver:
-  type: udp
-  tcp:
-    addr: 8.8.8.8:53
-    timeout: 4s
-  udp:
-    addr: 8.8.8.8:53
-    timeout: 4s
-    interval: 4s
 EOF
 
     if [[ -n $(echo $ip | grep ":") ]]; then
@@ -174,16 +160,12 @@ obfs:
 tls:
   sni: $MASQUERADE_HOST
   insecure: true
-  alpn: h3
 
 quic:
   initStreamReceiveWindow: 16777216
-  maxStreamReceiveWindow: 67108864
+  maxStreamReceiveWindow: 16777216
   initConnReceiveWindow: 33554432
-  maxConnReceiveWindow: 134217728
-  maxIdleTimeout: 30s
-  keepAlivePeriod: 10s
-  disablePathMTUDiscovery: false
+  maxConnReceiveWindow: 33554432
 
 fastOpen: true
 
@@ -192,21 +174,7 @@ socks5:
 
 transport:
   udp:
-    hopInterval: 30s
-
-bandwidth:
-  up: 20 Mbps
-  down: 100 Mbps
-
-resolver:
-  type: udp
-  tcp:
-    addr: 8.8.8.8:53
-    timeout: 4s
-  udp:
-    addr: 8.8.8.8:53
-    timeout: 4s
-    interval: 4s
+    hopInterval: 30s 
 EOF
 
     cat << EOF > /root/hy/hy-client.json
@@ -224,17 +192,13 @@ EOF
   },
   "tls": {
     "sni": "$MASQUERADE_HOST",
-    "insecure": true,
-    "alpn": "h3"
+    "insecure": true
   },
   "quic": {
     "initStreamReceiveWindow": 16777216,
-    "maxStreamReceiveWindow": 67108864,
+    "maxStreamReceiveWindow": 16777216,
     "initConnReceiveWindow": 33554432,
-    "maxConnReceiveWindow": 134217728,
-    "maxIdleTimeout": "30s",
-    "keepAlivePeriod": "10s",
-    "disablePathMTUDiscovery": false
+    "maxConnReceiveWindow": 33554432
   },
   "socks5": {
     "listen": "127.0.0.1:5678"
@@ -242,22 +206,6 @@ EOF
   "transport": {
     "udp": {
       "hopInterval": "30s"
-    }
-  },
-  "bandwidth": {
-    "up": "20 Mbps",
-    "down": "100 Mbps"
-  },
-  "resolver": {
-    "type": "udp",
-    "tcp": {
-      "addr": "8.8.8.8:53",
-      "timeout": "4s"
-    },
-    "udp": {
-      "addr": "8.8.8.8:53",
-      "timeout": "4s",
-      "interval": "4s"
     }
   }
 }
@@ -360,13 +308,21 @@ restart_hy2() {
 
 show_config() {
     if [ ! -f "/root/hy/url.txt" ]; then
-        red "分享链接不存在"
+        red "配置文件不存在"
         return
     fi
 
     green "======================================================================================"
-    yellow "分享链接:"
-    red "$(cat /root/hy/url.txt)"
+    if [ -f "/root/hy/hy-client.yaml" ]; then
+        yellow "YAML配置文件 (/root/hy/hy-client.yaml):"
+        cat /root/hy/hy-client.yaml
+        echo ""
+    fi
+
+    if [ -f "/root/hy/url.txt" ]; then
+        yellow "分享链接:"
+        red "$(cat /root/hy/url.txt)"
+    fi
     green "======================================================================================"
 }
 
@@ -395,14 +351,14 @@ service_menu() {
 menu() {
     clear
     echo "#############################################################"
-    echo -e "#                 ${GREEN}Hysteria  一键配置脚本${PLAIN}                  #"
+    echo -e "#                 ${GREEN}Hysteria 2 一键配置脚本${PLAIN}                  #"
     echo "#############################################################"
     echo ""
     echo -e " ${GREEN}1.${PLAIN} 安装 Hysteria 2 (端口$HYSTERIA_PORT, 伪装$MASQUERADE_HOST, 自签证书)"
     echo -e " ${RED}2.${PLAIN} 卸载 Hysteria 2"
     echo "------------------------------------------------------------"
     echo -e " ${GREEN}3.${PLAIN} 关闭、开启、重启 Hysteria 2"
-    echo -e " ${GREEN}4.${PLAIN} 显示分享链接"
+    echo -e " ${GREEN}4.${PLAIN} 显示 Hysteria 2 配置文件"
     echo "------------------------------------------------------------"
     echo -e " ${GREEN}5.${PLAIN} 修改端口"
     echo -e " ${GREEN}0.${PLAIN} 退出脚本"
