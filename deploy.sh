@@ -121,7 +121,7 @@ if [ "$action" = "3" ]; then
 fi
 
 # 独立更新 default1.html
-if [ "$action" = "4" ]; then
+if [ "$action" = "5" ]; then
     echo ""
     echo "=========================================="
     echo "  更新 default1.html 文件"
