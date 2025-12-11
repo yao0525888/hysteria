@@ -1429,6 +1429,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import sys
 
 DATA_FILE = '/var/www/html/data.json'
+DATA_FILE1 = '/var/www/html/data1.json'
 SETTINGS_FILE = '/var/www/html/settings.json'
 PASSWORD_FILE = '/var/www/html/password.json'
 
@@ -1460,6 +1461,11 @@ class APIHandler(BaseHTTPRequestHandler):
                 self.send_json(read_json_file(DATA_FILE, []))
             except Exception as e:
                 self.send_json({'error': str(e)}, 500)
+        elif self.path == '/api/data1':
+            try:
+                self.send_json(read_json_file(DATA_FILE1, []))
+            except Exception as e:
+                self.send_json({'error': str(e)}, 500)
         elif self.path == '/api/settings':
             try:
                 self.send_json(read_json_file(SETTINGS_FILE, {}))
@@ -1481,6 +1487,9 @@ class APIHandler(BaseHTTPRequestHandler):
             post_data = json.loads(self.rfile.read(content_length).decode('utf-8'))
             if self.path == '/api/data':
                 write_json_file(DATA_FILE, post_data)
+                self.send_json({'success': True})
+            elif self.path == '/api/data1':
+                write_json_file(DATA_FILE1, post_data)
                 self.send_json({'success': True})
             elif self.path == '/api/settings':
                 write_json_file(SETTINGS_FILE, post_data)
