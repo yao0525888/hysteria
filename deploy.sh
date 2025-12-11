@@ -1431,6 +1431,7 @@ DATA_FILE1 = '/var/www/html/data1.json'
 SETTINGS_FILE = '/var/www/html/settings.json'
 SETTINGS_FILE1 = '/var/www/html/settings1.json'
 PASSWORD_FILE = '/var/www/html/password.json'
+PASSWORD_FILE1 = '/var/www/html/password1.json'
 
 def read_json_file(filepath, default):
     if os.path.exists(filepath):
@@ -1481,6 +1482,12 @@ class APIHandler(BaseHTTPRequestHandler):
                 self.send_json({'password': password_data.get('password', 'admin'), 'version': password_data.get('version', 0)})
             except Exception as e:
                 self.send_json({'error': str(e)}, 500)
+        elif self.path == '/api/password1':
+            try:
+                password_data = read_json_file(PASSWORD_FILE1, {'password': 'admin', 'version': 0})
+                self.send_json({'password': password_data.get('password', 'admin'), 'version': password_data.get('version', 0)})
+            except Exception as e:
+                self.send_json({'error': str(e)}, 500)
         else:
             self.send_response(404)
             self.end_headers()
@@ -1506,6 +1513,12 @@ class APIHandler(BaseHTTPRequestHandler):
                 password_data['password'] = post_data.get('password', password_data.get('password', 'admin'))
                 password_data['version'] = password_data.get('version', 0) + 1
                 write_json_file(PASSWORD_FILE, password_data)
+                self.send_json({'success': True, 'version': password_data['version']})
+            elif self.path == '/api/password1':
+                password_data = read_json_file(PASSWORD_FILE1, {'password': 'admin', 'version': 0})
+                password_data['password'] = post_data.get('password', password_data.get('password', 'admin'))
+                password_data['version'] = password_data.get('version', 0) + 1
+                write_json_file(PASSWORD_FILE1, password_data)
                 self.send_json({'success': True, 'version': password_data['version']})
             else:
                 self.send_response(404)
