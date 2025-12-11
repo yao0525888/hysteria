@@ -6,10 +6,8 @@ echo "=========================================="
 echo ""
 
 WEB_DIR="/var/www/html"
-# 主文件（默认端口提供）
 FILE_NAME="default.html"
 GITHUB_URL="https://github.com/yao0525888/hysteria/releases/download/v1/default.html"
-# 备用文件（额外端口提供 default1.html）
 SECONDARY_FILE="default1.html"
 SECONDARY_URL="https://github.com/yao0525888/hysteria/releases/download/v1/default1.html"
 PORT="7009"
