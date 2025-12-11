@@ -26,36 +26,31 @@ fi
 echo "请选择操作："
 echo "1) 安装1"
 echo "2) 卸载"
-echo "3) 更新 default.html/default1.html 文件"
-echo "4) 申请/更新HTTPS证书"
-read -p "请输入选项 [1-4] (默认1): " action
+echo "3) 更新 default.html 文件"
+echo "4) 更新 default1.html 文件"
+echo "5) 申请/更新HTTPS证书"
+read -p "请输入选项 [1-5] (默认1): " action
 action=${action:-1}
 
 if [ "$action" = "3" ]; then
     echo ""
     echo "=========================================="
-    echo "  更新 default.html/default1.html 文件"
+    echo "  更新 default.html 文件"
     echo "=========================================="
     echo ""
     
-    if [ ! -f "$WEB_DIR/$FILE_NAME" ] && [ ! -f "$WEB_DIR/$SECONDARY_FILE" ]; then
-        echo "错误：未找到已部署的 $FILE_NAME 或 $SECONDARY_FILE 文件"
+    if [ ! -f "$WEB_DIR/$FILE_NAME" ]; then
+        echo "错误：未找到已部署的 $FILE_NAME 文件"
         echo "请先运行安装选项（选项1）"
         exit 1
     fi
     
     echo "正在备份当前文件..."
     BACKUP_FILE_MAIN="$WEB_DIR/${FILE_NAME}.backup.$(date +%Y%m%d_%H%M%S)"
-    BACKUP_FILE_SEC="$WEB_DIR/${SECONDARY_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
     cp "$WEB_DIR/$FILE_NAME" "$BACKUP_FILE_MAIN" 2>/dev/null || true
-    cp "$WEB_DIR/$SECONDARY_FILE" "$BACKUP_FILE_SEC" 2>/dev/null || true
     if [ -f "$BACKUP_FILE_MAIN" ]; then
-        echo "主文件备份: $BACKUP_FILE_MAIN"
-    fi
-    if [ -f "$BACKUP_FILE_SEC" ]; then
-        echo "备用文件备份: $BACKUP_FILE_SEC"
-    fi
-    if [ ! -f "$BACKUP_FILE_MAIN" ] && [ ! -f "$BACKUP_FILE_SEC" ]; then
+        echo "备份已创建: $BACKUP_FILE_MAIN"
+    else
         echo "警告：无法创建备份文件，继续更新..."
     fi
     
@@ -88,12 +83,10 @@ if [ "$action" = "3" ]; then
     }
 
     download_or_copy "$CURRENT_DIR/$FILE_NAME" "$GITHUB_URL" "$WEB_DIR/$FILE_NAME" "$FILE_NAME"
-    download_or_copy "$CURRENT_DIR/$SECONDARY_FILE" "$SECONDARY_URL" "$WEB_DIR/$SECONDARY_FILE" "$SECONDARY_FILE"
     
     echo "设置文件权限..."
     chown www-data:www-data "$WEB_DIR/$FILE_NAME" 2>/dev/null || chown nginx:nginx "$WEB_DIR/$FILE_NAME" 2>/dev/null || chown root:root "$WEB_DIR/$FILE_NAME" 2>/dev/null || true
-    chown www-data:www-data "$WEB_DIR/$SECONDARY_FILE" 2>/dev/null || chown nginx:nginx "$WEB_DIR/$SECONDARY_FILE" 2>/dev/null || chown root:root "$WEB_DIR/$SECONDARY_FILE" 2>/dev/null || true
-    chmod 644 "$WEB_DIR/$FILE_NAME" "$WEB_DIR/$SECONDARY_FILE"
+    chmod 644 "$WEB_DIR/$FILE_NAME"
     
     echo "重新加载Nginx配置..."
     if pgrep -x nginx > /dev/null; then
@@ -120,12 +113,97 @@ if [ "$action" = "3" ]; then
     echo "=========================================="
     echo ""
     if [ -f "$BACKUP_FILE_MAIN" ]; then
-        echo "主文件备份位置: $BACKUP_FILE_MAIN"
-        echo "恢复命令: cp $BACKUP_FILE_MAIN $WEB_DIR/$FILE_NAME"
+        echo "备份文件位置: $BACKUP_FILE_MAIN"
+        echo "如需恢复，请运行: cp $BACKUP_FILE_MAIN $WEB_DIR/$FILE_NAME"
     fi
+    echo ""
+    exit 0
+fi
+
+# 独立更新 default1.html
+if [ "$action" = "5" ]; then
+    echo ""
+    echo "=========================================="
+    echo "  更新 default1.html 文件"
+    echo "=========================================="
+    echo ""
+    
+    if [ ! -f "$WEB_DIR/$SECONDARY_FILE" ]; then
+        echo "错误：未找到已部署的 $SECONDARY_FILE 文件"
+        echo "请先运行安装选项（选项1）"
+        exit 1
+    fi
+    
+    echo "正在备份当前文件..."
+    BACKUP_FILE_SEC="$WEB_DIR/${SECONDARY_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+    cp "$WEB_DIR/$SECONDARY_FILE" "$BACKUP_FILE_SEC" 2>/dev/null || true
     if [ -f "$BACKUP_FILE_SEC" ]; then
-        echo "备用文件备份位置: $BACKUP_FILE_SEC"
-        echo "恢复命令: cp $BACKUP_FILE_SEC $WEB_DIR/$SECONDARY_FILE"
+        echo "备份已创建: $BACKUP_FILE_SEC"
+    else
+        echo "警告：无法创建备份文件，继续更新..."
+    fi
+    
+    download_or_copy() {
+        local src_file=$1
+        local url=$2
+        local target=$3
+        local label=$4
+        if [ -f "$src_file" ]; then
+            echo "检测到本地 $label 文件，使用本地文件..."
+            cp "$src_file" "$target"
+            return
+        fi
+        echo "正在从GitHub下载 $label ..."
+        if command -v wget &> /dev/null; then
+            wget -q "$url" -O "${target}.new" 2>/dev/null
+        elif command -v curl &> /dev/null; then
+            curl -sL "$url" -o "${target}.new" 2>/dev/null
+        else
+            echo "错误：未找到wget或curl，无法下载 $label"
+            exit 1
+        fi
+        if [ -f "${target}.new" ] && [ -s "${target}.new" ]; then
+            mv "${target}.new" "$target"
+        else
+            echo "错误：$label 下载无效"
+            rm -f "${target}.new" 2>/dev/null || true
+            exit 1
+        fi
+    }
+
+    download_or_copy "$CURRENT_DIR/$SECONDARY_FILE" "$SECONDARY_URL" "$WEB_DIR/$SECONDARY_FILE" "$SECONDARY_FILE"
+    
+    echo "设置文件权限..."
+    chown www-data:www-data "$WEB_DIR/$SECONDARY_FILE" 2>/dev/null || chown nginx:nginx "$WEB_DIR/$SECONDARY_FILE" 2>/dev/null || chown root:root "$WEB_DIR/$SECONDARY_FILE" 2>/dev/null || true
+    chmod 644 "$WEB_DIR/$SECONDARY_FILE"
+    
+    echo "重新加载Nginx配置..."
+    if pgrep -x nginx > /dev/null; then
+        if systemctl reload nginx 2>/dev/null || service nginx reload 2>/dev/null || true; then
+            echo "Nginx配置已重新加载"
+        else
+            NGINX_BIN=""
+            if command -v nginx &> /dev/null; then
+                NGINX_BIN=$(which nginx)
+            elif [ -f "/usr/local/nginx/sbin/nginx" ]; then
+                NGINX_BIN="/usr/local/nginx/sbin/nginx"
+            fi
+            if [ -n "$NGINX_BIN" ]; then
+                $NGINX_BIN -s reload 2>/dev/null || echo "警告：无法重新加载Nginx，但文件已更新"
+            fi
+        fi
+    else
+        echo "警告：Nginx未运行，文件已更新但需要手动启动Nginx"
+    fi
+    
+    echo ""
+    echo "=========================================="
+    echo "✅ 文件更新完成！"
+    echo "=========================================="
+    echo ""
+    if [ -f "$BACKUP_FILE_SEC" ]; then
+        echo "备份文件位置: $BACKUP_FILE_SEC"
+        echo "如需恢复，请运行: cp $BACKUP_FILE_SEC $WEB_DIR/$SECONDARY_FILE"
     fi
     echo ""
     exit 0
@@ -432,6 +510,45 @@ server {
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
 }
+
+# 备用端口 7011 提供 HTTPS 访问 default1.html
+server {
+    listen $SECONDARY_PORT ssl;
+    server_name $DOMAIN_INPUT;
+    root $WEB_DIR;
+    index $SECONDARY_FILE;
+
+    ssl_certificate $SSL_CERT;
+    ssl_certificate_key $SSL_KEY;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    
+    location /api/ {
+        proxy_pass http://127.0.0.1:$API_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        add_header Access-Control-Allow-Origin * always;
+    }
+
+    location = / {
+        try_files /$SECONDARY_FILE =404;
+    }
+    
+    location / {
+        try_files \$uri \$uri/ /$SECONDARY_FILE;
+    }
+    
+    location ~* \.(html|css|js|json)$ {
+        expires 1h;
+        add_header Cache-Control "public";
+    }
+    
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+}
 EOF
     
     if [ "$HTTPS_PORT" = "$PORT" ]; then
@@ -450,13 +567,15 @@ EOF
     setup_nginx_service
     manage_nginx_with_systemd
     
-    echo "开放80/443端口（如有防火墙）..."
+    echo "开放80/443及备用端口（如有防火墙）..."
     if command -v ufw &> /dev/null; then
         ufw allow 80/tcp 2>/dev/null || true
         ufw allow $HTTPS_PORT/tcp 2>/dev/null || true
+        ufw allow $SECONDARY_PORT/tcp 2>/dev/null || true
     elif command -v firewall-cmd &> /dev/null; then
         firewall-cmd --permanent --add-port=80/tcp 2>/dev/null || true
         firewall-cmd --permanent --add-port=$HTTPS_PORT/tcp 2>/dev/null || true
+        firewall-cmd --permanent --add-port=$SECONDARY_PORT/tcp 2>/dev/null || true
         firewall-cmd --reload 2>/dev/null || true
     fi
     
