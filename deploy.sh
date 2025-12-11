@@ -24,7 +24,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 echo "请选择操作："
-echo "1) 安装1"
+echo "1) 安装"
 echo "2) 卸载"
 echo "3) 更新 default.html 文件"
 echo "4) 更新 default1.html 文件"
