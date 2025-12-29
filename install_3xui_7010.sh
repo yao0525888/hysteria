@@ -114,19 +114,22 @@ EOF
         ufw allow 443/tcp >/dev/null 2>&1 || true
       fi
 
-      echo ""
-      echo "域名配置完成："
-      echo "  http://${PANEL_DOMAIN_INPUT} （若需HTTPS，请运行下面certbot命令）"
-      echo ""
-      echo "示例获取证书命令："
-      echo "  sudo certbot --nginx -d ${PANEL_DOMAIN_INPUT}"
+      
     else
       echo "域名为空，跳过域名配置。"
-      echo -e "面板地址：\033[0;32mhttp://$SERVER_IP:$PANEL_PORT/\033[0m"
     fi
   else
-    echo -e "面板地址：\033[0;32mhttp://$SERVER_IP:$PANEL_PORT/\033[0m"
+    :
   fi
+
+  echo ""
+  echo -e "\033[0;32m✓ 服务安装完成\033[0m"
+  echo ""
+  echo -e "\033[1;33m3x-ui 管理面板地址:\033[0m"
+  if [ -n "$PANEL_DOMAIN_INPUT" ]; then
+    echo -e "\033[0;32mhttp://${PANEL_DOMAIN_INPUT}\033[0m"
+  fi
+  echo -e "\033[0;32mhttp://${SERVER_IP}:${PANEL_PORT}\033[0m"
 
   echo ""
   echo "用户名：$USERNAME"
