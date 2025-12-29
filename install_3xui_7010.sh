@@ -4,7 +4,7 @@ set -e
 
 PANEL_PORT=7010
 USERNAME="admin"
-PASSWORD="admin"
+PASSWORD="yao581581"
 INSTALL_SCRIPT_URL="https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh"
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -80,7 +80,54 @@ install_panel() {
   echo "==== 安装完成 ===="
   SERVER_IP=$(curl -4s https://api.ipify.org 2>/dev/null || curl -4s https://ifconfig.me 2>/dev/null || echo "<你的公网IP>")
 
-  echo -e "面板地址：\033[0;32mhttp://$SERVER_IP:$PANEL_PORT/\033[0m"
+  read -rp "是否配置自定义域名用于访问面板？(y/N): " _use_domain
+  echo ""
+  if [[ "$_use_domain" =~ ^[Yy]$ ]]; then
+    read -rp "请输入域名（例如 panel.example.com）: " PANEL_DOMAIN_INPUT
+    PANEL_DOMAIN_INPUT=$(echo "$PANEL_DOMAIN_INPUT" | tr -d '[:space:]')
+    if [ -n "$PANEL_DOMAIN_INPUT" ]; then
+      echo "正在为域名 $PANEL_DOMAIN_INPUT 配置 nginx..."
+      apt update -y >/dev/null 2>&1
+      apt install -y nginx certbot python3-certbot-nginx >/dev/null 2>&1 || true
+
+      cat > /etc/nginx/sites-available/3x-ui << EOF
+server {
+    listen 80;
+    server_name ${PANEL_DOMAIN_INPUT};
+
+    location / {
+        proxy_pass http://127.0.0.1:${PANEL_PORT};
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+
+      ln -sf /etc/nginx/sites-available/3x-ui /etc/nginx/sites-enabled/ 2>/dev/null || true
+      rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+      nginx -t >/dev/null 2>&1 && systemctl restart nginx >/dev/null 2>&1
+
+      if command -v ufw >/dev/null 2>&1; then
+        ufw allow 80/tcp >/dev/null 2>&1 || true
+        ufw allow 443/tcp >/dev/null 2>&1 || true
+      fi
+
+      echo ""
+      echo "域名配置完成："
+      echo "  http://${PANEL_DOMAIN_INPUT} （若需HTTPS，请运行下面certbot命令）"
+      echo ""
+      echo "示例获取证书命令："
+      echo "  sudo certbot --nginx -d ${PANEL_DOMAIN_INPUT}"
+    else
+      echo "域名为空，跳过域名配置。"
+      echo -e "面板地址：\033[0;32mhttp://$SERVER_IP:$PANEL_PORT/\033[0m"
+    fi
+  else
+    echo -e "面板地址：\033[0;32mhttp://$SERVER_IP:$PANEL_PORT/\033[0m"
+  fi
+
   echo ""
   echo "用户名：$USERNAME"
   echo "密  码：$PASSWORD"
