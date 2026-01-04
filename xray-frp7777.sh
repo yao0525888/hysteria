@@ -142,7 +142,7 @@ install_xray() {
     UUID="9e264d67-fe47-4d2f-b55e-631a12e46a30"
     PRIVATE_KEY="SBznh0LAR5I-Xo2XDMAJrCC_UoS1Wb7gjycfKTFyZmA"
     PUBLIC_KEY="n5cQsnGAxadThor3_U5fIFafC24rA0-OrA3vQj06onU"
-    PORT=7777
+    PORT=8443
     FLOW="xtls-rprx-vision"
     SNI="dash.cloudflare.com"
     DOMAIN=$(curl -s ifconfig.me)
