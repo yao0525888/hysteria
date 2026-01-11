@@ -2,7 +2,7 @@
 
 set -e
 
-PANEL_PORT=7010
+PANEL_PORT=7019
 USERNAME="admin"
 PASSWORD="yao581581"
 INSTALL_SCRIPT_URL="https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh"
