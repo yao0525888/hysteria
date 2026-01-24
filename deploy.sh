@@ -15,12 +15,11 @@ show_menu() {
     echo "  2) 修改 API Key"
     echo "  3) 修改 Hysteria2 密码"
     echo "  4) 修改 Xray UUID"
-    echo "  5) 修改邮箱授权码"
-    echo "  6) 查看当前配置"
-    echo "  7) 卸载后端服务"
-    echo "  8) 退出"
+    echo "  5) 查看当前配置"
+    echo "  6) 卸载后端服务"
+    echo "  7) 退出"
     echo ""
-    echo -n "请输入选项 [1-8]: "
+    echo -n "请输入选项 [1-7]: "
     read -r choice
     
     case "$choice" in
@@ -28,10 +27,9 @@ show_menu() {
         2) change_api_key ;;
         3) change_hysteria_password ;;
         4) change_xray_uuid ;;
-        5) change_email_auth_code ;;
-        6) show_config ;;
-        7) uninstall_backend ;;
-        8) echo "退出"; exit 0 ;;
+        5) show_config ;;
+        6) uninstall_backend ;;
+        7) echo "退出"; exit 0 ;;
         *) echo "无效选项"; sleep 2; show_menu ;;
     esac
 }
@@ -217,71 +215,6 @@ change_xray_uuid() {
     show_menu
 }
 
-change_email_auth_code() {
-    clear
-    echo "========================================="
-    echo "  修改邮箱授权码"
-    echo "========================================="
-    echo ""
-
-    if [ ! -f "$PROJECT_DIR/backend/.env" ]; then
-        echo "✗ 后端服务未安装"
-        echo "请先安装后端服务"
-        sleep 3
-        show_menu
-        return
-    fi
-
-    echo "当前邮箱授权码:"
-    OLD_EMAIL_AUTH_CODE=$(grep "^EMAIL_AUTH_CODE=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
-    if [ -z "$OLD_EMAIL_AUTH_CODE" ]; then
-        echo "未设置"
-    else
-        echo "$OLD_EMAIL_AUTH_CODE"
-    fi
-    echo ""
-    echo -n "请输入新的邮箱授权码: "
-    read -r NEW_EMAIL_AUTH_CODE
-
-    if [ -z "$NEW_EMAIL_AUTH_CODE" ]; then
-        echo "授权码不能为空"
-        sleep 2
-        show_menu
-        return
-    fi
-
-    echo ""
-    echo -n "确认修改邮箱授权码？(y/n): "
-    read -r confirm
-
-    if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-        if grep -q "^EMAIL_AUTH_CODE=" $PROJECT_DIR/backend/.env; then
-            sed -i "s/^EMAIL_AUTH_CODE=.*/EMAIL_AUTH_CODE=$NEW_EMAIL_AUTH_CODE/" $PROJECT_DIR/backend/.env
-        else
-            echo "EMAIL_AUTH_CODE=$NEW_EMAIL_AUTH_CODE" >> $PROJECT_DIR/backend/.env
-        fi
-        echo "$NEW_EMAIL_AUTH_CODE" > /root/pi-network-email-auth-code.txt
-
-        systemctl restart pi-network-backend
-
-        echo ""
-        echo "✓ 邮箱授权码已更新"
-        echo "✓ 后端服务已重启"
-        echo "✓ 授权码已保存到: /root/pi-network-email-auth-code.txt"
-        echo ""
-        echo "新的邮箱授权码: $NEW_EMAIL_AUTH_CODE"
-        echo ""
-        echo "注意: 请确保邮件服务器配置正确"
-    else
-        echo "已取消"
-    fi
-
-    echo ""
-    echo -n "按回车键继续..."
-    read
-    show_menu
-}
-
 uninstall_backend() {
     clear
     echo "========================================="
@@ -363,7 +296,6 @@ show_config() {
     API_KEY=$(grep "^API_KEY=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
     PORT=$(grep "^PORT=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
     ENABLE_LIMIT=$(grep "^ENABLE_LIMIT=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
-    EMAIL_AUTH_CODE=$(grep "^EMAIL_AUTH_CODE=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
     
     HYSTERIA_PORT=$(grep "^HYSTERIA_PORT=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
     HYSTERIA_PASSWORD=$(grep "^HYSTERIA_PASSWORD=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
@@ -403,13 +335,6 @@ show_config() {
     echo "  Xray SNI: $XRAY_SNI"
     echo "  FRPS 端口: $XRAY_FRP_PORT"
     echo "  FRPS 密钥: $XRAY_FRP_TOKEN"
-    echo ""
-    echo "邮件配置:"
-    if [ -z "$EMAIL_AUTH_CODE" ]; then
-        echo "  邮箱授权码: 未设置"
-    else
-        echo "  邮箱授权码: $EMAIL_AUTH_CODE"
-    fi
     echo ""
     echo "常用命令："
     echo "  查看状态: systemctl status pi-network-backend"
@@ -459,39 +384,52 @@ apt-get update -qq
 apt-get install -y wget curl tar swaks
 
 echo ""
-echo ">>> 步骤 2/8: 下载项目文件..."
+echo ">>> 步骤 2/8: 获取项目文件..."
 mkdir -p $TEMP_DIR
 cd $TEMP_DIR
 
-echo "正在从 GitHub 下载... (如果失败会自动重试)"
-for i in {1..3}; do
-    if wget -T 30 -t 3 --show-progress $DOWNLOAD_URL -O pi-network-backend.tar.gz; then
-        echo "✓ 下载完成"
-        break
+# 优先检查本地目录
+if [ -d "/root/pi-network-backend" ]; then
+    echo "发现本地项目文件，正在复制..."
+    cp -r /root/pi-network-backend pi-network
+    if [ $? -eq 0 ]; then
+        echo "✓ 本地文件复制完成"
     else
-        if [ $i -lt 3 ]; then
-            echo "下载失败，5秒后重试... ($i/3)"
-            sleep 5
-        else
-            echo "✗ 下载失败，请检查网络连接或手动下载"
-            echo "手动安装步骤："
-            echo "1. 下载文件: $DOWNLOAD_URL"
-            echo "2. 上传到服务器 /tmp/pi-network-backend.tar.gz"
-            echo "3. 重新运行此脚本"
-            exit 1
-        fi
+        echo "✗ 本地文件复制失败"
+        exit 1
     fi
-done
+else
+    echo "未发现本地项目文件，正在从 GitHub 下载... (如果失败会自动重试)"
+    for i in {1..3}; do
+        if wget -T 30 -t 3 --show-progress $DOWNLOAD_URL -O pi-network-backend.tar.gz; then
+            echo "✓ 下载完成"
+            break
+        else
+            if [ $i -lt 3 ]; then
+                echo "下载失败，5秒后重试... ($i/3)"
+                sleep 5
+            else
+                echo "✗ 下载失败，请检查网络连接或手动下载"
+                echo "手动安装步骤："
+                echo "1. 下载文件: $DOWNLOAD_URL"
+                echo "2. 上传到服务器 /tmp/pi-network-backend.tar.gz"
+                echo "3. 或者将解压后的项目文件放到 /root/pi-network-backend"
+                echo "4. 重新运行此脚本"
+                exit 1
+            fi
+        fi
+    done
 
-echo ""
-echo ">>> 步骤 3/8: 解压文件..."
-mkdir -p pi-network
-tar -xzf pi-network-backend.tar.gz -C pi-network
-if [ $? -ne 0 ]; then
-    echo "✗ 解压失败"
-    exit 1
+    echo ""
+    echo ">>> 步骤 3/8: 解压文件..."
+    mkdir -p pi-network
+    tar -xzf pi-network-backend.tar.gz -C pi-network
+    if [ $? -ne 0 ]; then
+        echo "✗ 解压失败"
+        exit 1
+    fi
+    echo "✓ 解压完成"
 fi
-echo "✓ 解压完成"
 
 echo ""
 echo ">>> 步骤 4/8: 安装 Node.js..."
