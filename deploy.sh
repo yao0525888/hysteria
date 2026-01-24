@@ -15,7 +15,7 @@ show_menu() {
     echo "  2) 修改 API Key"
     echo "  3) 修改 Hysteria2 密码"
     echo "  4) 修改 Xray UUID"
-    echo "  5) 修改邮件密码"
+    echo "  5) 修改邮箱授权码"
     echo "  6) 查看当前配置"
     echo "  7) 卸载后端服务"
     echo "  8) 退出"
@@ -28,7 +28,7 @@ show_menu() {
         2) change_api_key ;;
         3) change_hysteria_password ;;
         4) change_xray_uuid ;;
-        5) change_email_password ;;
+        5) change_email_auth_code ;;
         6) show_config ;;
         7) uninstall_backend ;;
         8) echo "退出"; exit 0 ;;
@@ -217,10 +217,10 @@ change_xray_uuid() {
     show_menu
 }
 
-change_email_password() {
+change_email_auth_code() {
     clear
     echo "========================================="
-    echo "  修改邮件密码"
+    echo "  修改邮箱授权码"
     echo "========================================="
     echo ""
 
@@ -232,44 +232,44 @@ change_email_password() {
         return
     fi
 
-    echo "当前邮件密码:"
-    OLD_EMAIL_PASSWORD=$(grep "^EMAIL_PASSWORD=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
-    if [ -z "$OLD_EMAIL_PASSWORD" ]; then
+    echo "当前邮箱授权码:"
+    OLD_EMAIL_AUTH_CODE=$(grep "^EMAIL_AUTH_CODE=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
+    if [ -z "$OLD_EMAIL_AUTH_CODE" ]; then
         echo "未设置"
     else
-        echo "$OLD_EMAIL_PASSWORD"
+        echo "$OLD_EMAIL_AUTH_CODE"
     fi
     echo ""
-    echo -n "请输入新的邮件密码: "
-    read -r NEW_EMAIL_PASSWORD
+    echo -n "请输入新的邮箱授权码: "
+    read -r NEW_EMAIL_AUTH_CODE
 
-    if [ -z "$NEW_EMAIL_PASSWORD" ]; then
-        echo "密码不能为空"
+    if [ -z "$NEW_EMAIL_AUTH_CODE" ]; then
+        echo "授权码不能为空"
         sleep 2
         show_menu
         return
     fi
 
     echo ""
-    echo -n "确认修改邮件密码？(y/n): "
+    echo -n "确认修改邮箱授权码？(y/n): "
     read -r confirm
 
     if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-        if grep -q "^EMAIL_PASSWORD=" $PROJECT_DIR/backend/.env; then
-            sed -i "s/^EMAIL_PASSWORD=.*/EMAIL_PASSWORD=$NEW_EMAIL_PASSWORD/" $PROJECT_DIR/backend/.env
+        if grep -q "^EMAIL_AUTH_CODE=" $PROJECT_DIR/backend/.env; then
+            sed -i "s/^EMAIL_AUTH_CODE=.*/EMAIL_AUTH_CODE=$NEW_EMAIL_AUTH_CODE/" $PROJECT_DIR/backend/.env
         else
-            echo "EMAIL_PASSWORD=$NEW_EMAIL_PASSWORD" >> $PROJECT_DIR/backend/.env
+            echo "EMAIL_AUTH_CODE=$NEW_EMAIL_AUTH_CODE" >> $PROJECT_DIR/backend/.env
         fi
-        echo "$NEW_EMAIL_PASSWORD" > /root/pi-network-email-password.txt
+        echo "$NEW_EMAIL_AUTH_CODE" > /root/pi-network-email-auth-code.txt
 
         systemctl restart pi-network-backend
 
         echo ""
-        echo "✓ 邮件密码已更新"
+        echo "✓ 邮箱授权码已更新"
         echo "✓ 后端服务已重启"
-        echo "✓ 密码已保存到: /root/pi-network-email-password.txt"
+        echo "✓ 授权码已保存到: /root/pi-network-email-auth-code.txt"
         echo ""
-        echo "新的邮件密码: $NEW_EMAIL_PASSWORD"
+        echo "新的邮箱授权码: $NEW_EMAIL_AUTH_CODE"
         echo ""
         echo "注意: 请确保邮件服务器配置正确"
     else
@@ -363,7 +363,7 @@ show_config() {
     API_KEY=$(grep "^API_KEY=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
     PORT=$(grep "^PORT=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
     ENABLE_LIMIT=$(grep "^ENABLE_LIMIT=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
-    EMAIL_PASSWORD=$(grep "^EMAIL_PASSWORD=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
+    EMAIL_AUTH_CODE=$(grep "^EMAIL_AUTH_CODE=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
     
     HYSTERIA_PORT=$(grep "^HYSTERIA_PORT=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
     HYSTERIA_PASSWORD=$(grep "^HYSTERIA_PASSWORD=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
@@ -405,10 +405,10 @@ show_config() {
     echo "  FRPS 密钥: $XRAY_FRP_TOKEN"
     echo ""
     echo "邮件配置:"
-    if [ -z "$EMAIL_PASSWORD" ]; then
-        echo "  邮件密码: 未设置"
+    if [ -z "$EMAIL_AUTH_CODE" ]; then
+        echo "  邮箱授权码: 未设置"
     else
-        echo "  邮件密码: $EMAIL_PASSWORD"
+        echo "  邮箱授权码: $EMAIL_AUTH_CODE"
     fi
     echo ""
     echo "常用命令："
