@@ -48,8 +48,19 @@ check_root() {
         log_error "请使用 sudo 或 root 权限运行脚本"
     fi
 }
+install_dependencies() {
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update -y >/dev/null 2>&1
+        apt-get install -y unzip wget >/dev/null 2>&1
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y unzip wget >/dev/null 2>&1
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y unzip wget >/dev/null 2>&1
+    elif command -v pacman >/dev/null 2>&1; then
+        pacman -S --noconfirm unzip wget >/dev/null 2>&1
+    fi
+}
 uninstall_frps() {
-    log_info "卸载旧版FRPS服务..."
     systemctl stop frps >/dev/null 2>&1
     systemctl disable frps >/dev/null 2>&1
     rm -f /etc/systemd/system/frps.service
@@ -58,14 +69,10 @@ uninstall_frps() {
 }
 install_frps() {
     log_step "1" "2" "安装FRPS服务..."
-    if ! command -v wget >/dev/null 2>&1; then
-        log_error "wget 未安装，请先安装wget: apt-get install wget 或 yum install wget"
-    fi
     uninstall_frps
     local FRP_NAME="frp_${FRP_VERSION#v}_linux_amd64"
     local FRP_FILE="${FRP_NAME}.tar.gz"
     cd /usr/local/ || exit 1
-    log_info "下载FRPS（版本：${FRP_VERSION}）..."
     if ! wget "https://github.com/fatedier/frp/releases/download/${FRP_VERSION}/${FRP_FILE}" -O "${FRP_FILE}" >/dev/null 2>&1; then
         exit 1
     fi
@@ -102,12 +109,7 @@ install_frps() {
         exit 1
     fi
     if ! systemctl enable --now frps >/dev/null 2>&1; then
-        echo -e "${RED}FRPS启动失败，检查详细信息：${NC}"
-        systemctl status frps --no-pager
-        echo -e "${YELLOW}配置文件内容：${NC}"
-        cat /etc/frp/frps.toml
-        echo -e "${YELLOW}FRPS二进制文件：${NC}"
-        ls -la /usr/local/frp/frps
+        echo -e "${RED}FRPS启动失败${NC}"
         exit 1
     fi
     log_success "FRPS安装成功"
@@ -122,17 +124,16 @@ install_xray() {
         *) log_error "不支持的架构" ;;
     esac
     VER=$XRAY_VERSION
-    log_info "Xray 版本号: $VER"
     URL="https://github.com/XTLS/Xray-core/releases/download/$VER/Xray-linux-$ARCH.zip"
     wget -q -O xray.zip $URL
     if [ ! -s xray.zip ]; then
-        log_error "Xray 安装包下载失败，文件不存在或为空，URL: $URL"
+        log_error "Xray 下载失败"
     fi
     if ! unzip -q -o xray.zip; then
-        log_error "Xray 安装包解压失败，可能下载失败或文件损坏"
+        log_error "Xray 解压失败"
     fi
     if [ ! -f xray ]; then
-        log_error "Xray 主程序未找到，安装失败"
+        log_error "Xray 主程序未找到"
     fi
     chmod +x xray
     mv xray /usr/local/bin/ >/dev/null 2>&1
@@ -231,7 +232,6 @@ show_results() {
     echo -e "${GREEN}$LINK${NC}\n"
 }
 uninstall_xray() {
-    log_step "1" "1" "卸载Xray服务..."
     systemctl stop xray >/dev/null 2>&1
     systemctl disable xray >/dev/null 2>&1
     rm -f /etc/systemd/system/xray.service
@@ -243,10 +243,9 @@ uninstall_xray() {
     log_success "Xray卸载成功"
 }
 modify_xray_port() {
-    log_step "1" "1" "修改Xray端口..."
     read -p "请输入新的端口号(1-65535): " NEW_PORT
     if ! [[ "$NEW_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_PORT" -lt 1 ] || [ "$NEW_PORT" -gt 65535 ]; then
-        log_error "无效的端口号，请输入1-65535之间的数字"
+        log_error "无效的端口号"
     fi
     if netstat -tuln | grep -q ":$NEW_PORT "; then
         log_error "端口 $NEW_PORT 已被占用"
@@ -280,7 +279,6 @@ modify_xray_port() {
     echo -e "${GREEN}$LINK${NC}\n"
 }
 modify_xray_protocol() {
-    log_step "1" "1" "修改Xray协议..."
     echo "请选择协议类型："
     echo "1. tcp"
     echo "2. ws"
@@ -327,22 +325,20 @@ show_menu() {
     echo -e "${YELLOW}=== Xray & FRPS 管理脚本 ===${NC}"
     echo -e "${GREEN}1.${NC} 安装 Xray + FRPS"
     echo -e "${GREEN}2.${NC} 卸载 Xray + FRPS"
-    echo -e "${GREEN}3.${NC} 卸载 Xray"
-    echo -e "${GREEN}4.${NC} 修改Xray端口"
-    echo -e "${GREEN}5.${NC} 修改Xray协议"
-    echo -e "${GREEN}6.${NC} 查看Xray分享链接"
-    echo -e "${GREEN}7.${NC} 退出"
+    echo -e "${GREEN}3.${NC} 修改Xray端口"
+    echo -e "${GREEN}4.${NC} 修改Xray协议"
+    echo -e "${GREEN}5.${NC} 查看Xray分享链接"
+    echo -e "${GREEN}6.${NC} 退出"
     echo -e "${YELLOW}===========================${NC}"
 }
 main() {
     check_root
-    
     while true; do
         show_menu
-        read -p "请选择操作 [1-7]: " choice
-        
+        read -p "请选择操作 [1-6]: " choice
         case $choice in
             1)
+                install_dependencies
                 install_frps
                 install_xray
                 cleanup
@@ -356,18 +352,15 @@ main() {
                 break
                 ;;
             3)
-                uninstall_xray
-                ;;
-            4)
                 modify_xray_port
                 ;;
-            5)
+            4)
                 modify_xray_protocol
                 ;;
-            6)
+            5)
                 show_xray_link
                 ;;
-            7)
+            6)
                 echo -e "${GREEN}退出脚本${NC}"
                 exit 0
                 ;;
