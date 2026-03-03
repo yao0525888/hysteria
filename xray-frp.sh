@@ -49,34 +49,24 @@ check_root() {
     fi
 }
 install_dependencies() {
-
     [ "$EUID" -ne 0 ] && exit 1
 
     if command -v apt-get >/dev/null 2>&1; then
-        PM="apt"
         apt-get update -y >/dev/null 2>&1
+        command -v unzip >/dev/null 2>&1 || apt-get install -y unzip >/dev/null 2>&1
+        command -v wget  >/dev/null 2>&1 || apt-get install -y wget  >/dev/null 2>&1
     elif command -v dnf >/dev/null 2>&1; then
-        PM="dnf"
+        command -v unzip >/dev/null 2>&1 || dnf install -y unzip >/dev/null 2>&1
+        command -v wget  >/dev/null 2>&1 || dnf install -y wget  >/dev/null 2>&1
     elif command -v yum >/dev/null 2>&1; then
-        PM="yum"
+        command -v unzip >/dev/null 2>&1 || yum install -y unzip >/dev/null 2>&1
+        command -v wget  >/dev/null 2>&1 || yum install -y wget  >/dev/null 2>&1
     elif command -v pacman >/dev/null 2>&1; then
-        PM="pacman"
+        command -v unzip >/dev/null 2>&1 || pacman -S --noconfirm unzip >/dev/null 2>&1
+        command -v wget  >/dev/null 2>&1 || pacman -S --noconfirm wget  >/dev/null 2>&1
     else
         exit 1
     fi
-
-    install_pkg() {
-        case $PM in
-            apt)    apt-get install -y "$1" >/dev/null 2>&1 ;;
-            dnf)    dnf install -y "$1" >/dev/null 2>&1 ;;
-            yum)    yum install -y "$1" >/dev/null 2>&1 ;;
-            pacman) pacman -S --noconfirm "$1" >/dev/null 2>&1 ;;
-        esac
-        [ $? -ne 0 ] && exit 1
-    }
-
-    command -v unzip >/dev/null 2>&1 || install_pkg unzip
-    command -v wget  >/dev/null 2>&1 || install_pkg wget
 }
 uninstall_frps() {
     systemctl stop frps >/dev/null 2>&1
