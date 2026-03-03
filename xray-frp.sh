@@ -49,16 +49,34 @@ check_root() {
     fi
 }
 install_dependencies() {
+
+    [ "$EUID" -ne 0 ] && exit 1
+
     if command -v apt-get >/dev/null 2>&1; then
+        PM="apt"
         apt-get update -y >/dev/null 2>&1
-        apt-get install -y unzip wget >/dev/null 2>&1
-    elif command -v yum >/dev/null 2>&1; then
-        yum install -y unzip wget >/dev/null 2>&1
     elif command -v dnf >/dev/null 2>&1; then
-        dnf install -y unzip wget >/dev/null 2>&1
+        PM="dnf"
+    elif command -v yum >/dev/null 2>&1; then
+        PM="yum"
     elif command -v pacman >/dev/null 2>&1; then
-        pacman -S --noconfirm unzip wget >/dev/null 2>&1
+        PM="pacman"
+    else
+        exit 1
     fi
+
+    install_pkg() {
+        case $PM in
+            apt)    apt-get install -y "$1" >/dev/null 2>&1 ;;
+            dnf)    dnf install -y "$1" >/dev/null 2>&1 ;;
+            yum)    yum install -y "$1" >/dev/null 2>&1 ;;
+            pacman) pacman -S --noconfirm "$1" >/dev/null 2>&1 ;;
+        esac
+        [ $? -ne 0 ] && exit 1
+    }
+
+    command -v unzip >/dev/null 2>&1 || install_pkg unzip
+    command -v wget  >/dev/null 2>&1 || install_pkg wget
 }
 uninstall_frps() {
     systemctl stop frps >/dev/null 2>&1
