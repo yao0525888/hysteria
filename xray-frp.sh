@@ -14,7 +14,7 @@ declare -A COUNTRY_MAP=(
     ["ID"]="印度尼西亚" ["TH"]="泰国" ["VN"]="越南" ["MY"]="马来西亚" ["PH"]="菲律宾"
 )
 FRP_VERSION="v0.62.0"
-XRAY_VERSION="v25.9.11"
+XRAY_VERSION="v26.2.6"
 FRPS_PORT="7006"
 SILENT_MODE=true
 gen_frps_token() {
