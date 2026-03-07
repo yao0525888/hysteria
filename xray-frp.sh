@@ -13,7 +13,7 @@ declare -A COUNTRY_MAP=(
     ["AT"]="奥地利" ["BE"]="比利时" ["IE"]="爱尔兰" ["PL"]="波兰" ["NZ"]="新西兰" ["MX"]="墨西哥"
     ["ID"]="印度尼西亚" ["TH"]="泰国" ["VN"]="越南" ["MY"]="马来西亚" ["PH"]="菲律宾"
 )
-FRP_VERSION="v0.62.0"
+FRP_VERSION="v0.66.0"
 XRAY_VERSION="v26.2.6"
 FRPS_PORT="7006"
 SILENT_MODE=true
