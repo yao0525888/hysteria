@@ -8,6 +8,7 @@ HYSTERIA_PORT=8443
 MASQUERADE_HOST=www.bing.com
 HY_PASSWORD=9e264d67-fe47-4d2f-b55e-631a12e46a30
 HY_OBFS_PASSWORD=wGW1duwjo7gWV0F4aqJu44jJBG4ELk3WNgbs3ATJu3M
+
 red(){ echo -e "\033[31m\033[01m$1\033[0m"; }
 green(){ echo -e "\033[32m\033[01m$1\033[0m"; }
 yellow(){ echo -e "\033[33m\033[01m$1\033[0m"; }
@@ -29,7 +30,9 @@ ensure_curl() {
         exit 1
     fi
 }
+
 realip(){ ip=$(curl -s4m8 ip.sb -k) || ip=$(curl -s6m8 ip.sb -k); }
+
 declare -A COUNTRY_MAP=(
   ["US"]="美国" ["CN"]="中国" ["HK"]="香港" ["TW"]="台湾" ["JP"]="日本" ["KR"]="韩国"
   ["SG"]="新加坡" ["AU"]="澳大利亚" ["DE"]="德国" ["GB"]="英国" ["CA"]="加拿大" ["FR"]="法国"
@@ -106,6 +109,8 @@ install_hy2() {
     wget -O /etc/hysteria/private.key https://github.com/yao0525888/hysteria/releases/download/v1/private.key
     chmod 644 /etc/hysteria/cert.crt /etc/hysteria/private.key
 
+    CERT_HASH=$(openssl x509 -noout -fingerprint -sha256 -in /etc/hysteria/cert.crt | awk -F= '{print $2}' | tr -d ':' | tr 'A-Z' 'a-z')
+
     cat << EOF > /etc/hysteria/config.yaml
 listen: :$HYSTERIA_PORT
 
@@ -159,7 +164,7 @@ obfs:
 
 tls:
   sni: $MASQUERADE_HOST
-  insecure: true
+  pinnedPeerCertSha256: $CERT_HASH
 
 quic:
   initStreamReceiveWindow: 16777216
@@ -192,7 +197,7 @@ EOF
   },
   "tls": {
     "sni": "$MASQUERADE_HOST",
-    "insecure": true
+    "pinnedPeerCertSha256": "$CERT_HASH"
   },
   "quic": {
     "initStreamReceiveWindow": 16777216,
@@ -211,7 +216,7 @@ EOF
 }
 EOF
 
-    url="hy2://$HY_PASSWORD@$last_ip:$HYSTERIA_PORT/?insecure=1&sni=$MASQUERADE_HOST&obfs=salamander&obfs-password=$HY_OBFS_PASSWORD#$node_name"
+    url="hy2://$HY_PASSWORD@$last_ip:$HYSTERIA_PORT/?pinSHA256=$CERT_HASH&sni=$MASQUERADE_HOST&obfs=salamander&obfs-password=$HY_OBFS_PASSWORD#$node_name"
     echo $url > /root/hy/url.txt
 
     cat > /etc/systemd/system/hysteria-server.service << EOF
@@ -232,24 +237,6 @@ EOF
     systemctl daemon-reload
     systemctl enable hysteria-server > /dev/null 2>&1
     systemctl start hysteria-server
-
-    if [[ ! -f /etc/systemd/system/hysteria-autostart.service ]]; then
-        cat > /etc/systemd/system/hysteria-autostart.service << EOF
-[Unit]
-Description=Hysteria 2 Auto Start Service
-After=network.target
-
-[Service]
-Type=oneshot
-ExecStart=/bin/bash -c "systemctl start hysteria-server"
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
-EOF
-        systemctl daemon-reload
-        systemctl enable hysteria-autostart >/dev/null 2>&1
-    fi
 
     if [[ -n $(systemctl status hysteria-server 2>/dev/null | grep -w active) ]]; then
         green "======================================================================================"
@@ -383,7 +370,6 @@ change_port() {
         menu
         return
     fi
-    # 修改配置文件中的端口
     if [ -f /etc/hysteria/config.yaml ]; then
         sed -i "s/^listen: :[0-9]\+/listen: :$new_port/" /etc/hysteria/config.yaml
     fi
@@ -391,7 +377,7 @@ change_port() {
         sed -i "s/^server: \(.*\):[0-9]\+/server: \1:$new_port/" /root/hy/hy-client.yaml
     fi
     if [ -f /root/hy/hy-client.json ]; then
-        sed -i "s/\("server": ".*:\)[0-9]\+\("\)/\1$new_port\2/" /root/hy/hy-client.json
+        sed -i "s/\(\"server\": \".*:\)[0-9]\+\(\"\)/\1$new_port\2/" /root/hy/hy-client.json
     fi
     if [ -f /root/hy/url.txt ]; then
         sed -i "s/\(@.*:\)[0-9]\+\//\1$new_port\//" /root/hy/url.txt
