@@ -4,10 +4,12 @@ RED="\033[31m"
 GREEN="\033[32m"
 YELLOW="\033[33m"
 PLAIN="\033[0m"
+
 HYSTERIA_PORT=8443
 MASQUERADE_HOST=www.bing.com
 HY_PASSWORD=9e264d67-fe47-4d2f-b55e-631a12e46a30
 HY_OBFS_PASSWORD=wGW1duwjo7gWV0F4aqJu44jJBG4ELk3WNgbs3ATJu3M
+CERT_HASH=ba515ecab2b16e232f66d7f504415833f3669605c4c416f957906156e75e8cd6
 
 red(){ echo -e "\033[31m\033[01m$1\033[0m"; }
 green(){ echo -e "\033[32m\033[01m$1\033[0m"; }
@@ -54,7 +56,6 @@ get_ip_region() {
     fi
 
     local country_code=""
-
     country_code=$(curl -s -m 5 "https://ipinfo.io/${ip}/json" | grep -o '"country":"[^\"]*"' | cut -d ':' -f2 | tr -d '",')
 
     if [[ -z "$country_code" ]]; then
@@ -105,11 +106,9 @@ install_hy2() {
 
     mkdir -p /etc/hysteria
 
-    wget -O /etc/hysteria/cert.crt https://github.com/yao0525888/hysteria/releases/download/v1/cert.crt
-    wget -O /etc/hysteria/private.key https://github.com/yao0525888/hysteria/releases/download/v1/private.key
+    wget -O /etc/hysteria/cert.crt https://github.com/yao0525888/hysteria/releases/download/v1/cert.crt >/dev/null 2>&1
+    wget -O /etc/hysteria/private.key https://github.com/yao0525888/hysteria/releases/download/v1/private.key >/dev/null 2>&1
     chmod 644 /etc/hysteria/cert.crt /etc/hysteria/private.key
-
-    CERT_HASH=$(openssl x509 -noout -fingerprint -sha256 -in /etc/hysteria/cert.crt | awk -F= '{print $2}' | tr -d ':' | tr 'A-Z' 'a-z')
 
     cat << EOF > /etc/hysteria/config.yaml
 listen: :$HYSTERIA_PORT
@@ -370,6 +369,7 @@ change_port() {
         menu
         return
     fi
+
     if [ -f /etc/hysteria/config.yaml ]; then
         sed -i "s/^listen: :[0-9]\+/listen: :$new_port/" /etc/hysteria/config.yaml
     fi
