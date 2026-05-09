@@ -177,7 +177,7 @@ install_system() {
     if [ "$EUID" -eq 0 ] && [ -n "$SUDO_USER" ]; then sudo usermod -aG docker "$SUDO_USER"; fi
     if ! id -u activation >/dev/null 2>&1; then sudo useradd -r -s /bin/false activation; fi
     create_directories
-    sudo chown -R activation:activation logs uploads backups 2>/dev/null || true
+    sudo chown -R activation:activation logs uploads backups docker/ssl 2>/dev/null || true
     sudo tee -a /etc/security/limits.conf > /dev/null <<EOF
 activation soft nofile 65536
 activation hard nofile 65536
@@ -292,9 +292,13 @@ setup_https_certificate() {
 server {
     listen 80;
     server_name $PRIMARY_DOMAIN;
-    root /var/www/html;
-    location /.well-known/acme-challenge/ { alias /var/www/html/.well-known/acme-challenge/; try_files \$uri =404; }
-    location / { return 301 https://$PRIMARY_DOMAIN\$request_uri; }
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+        try_files \$uri =404;
+    }
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
 }
 EOF
     $DOCKER_COMPOSE_CMD up -d nginx
@@ -304,7 +308,17 @@ EOF
     $DOCKER_COMPOSE_CMD stop nginx
     rm -f docker/nginx/conf.d/acme-challenge.conf
     cat > docker/nginx/conf.d/ssl.conf <<EOF
-server { listen 80; server_name $PRIMARY_DOMAIN; return 301 https://\$host\$request_uri; }
+server {
+    listen 80;
+    server_name $PRIMARY_DOMAIN;
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+        try_files \$uri =404;
+    }
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+}
 server {
     listen 443 ssl http2;
     server_name $PRIMARY_DOMAIN;
