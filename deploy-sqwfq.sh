@@ -527,6 +527,7 @@ LOG_FILE="/var/log/renew-certs.log"
 echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] Starting cert renewal" >> "${LOG_FILE}"
 docker run --rm -v "${PROJECT_ROOT}/docker/nginx/html:/var/www/html" -v /etc/letsencrypt:/etc/letsencrypt certbot/certbot renew --quiet >> "${LOG_FILE}" 2>&1 || true
 if [ -f "${LE_LIVE}/fullchain.pem" ] && [ -f "${LE_LIVE}/privkey.pem" ]; then
+  mkdir -p "${SSL_TARGET_DIR}"
   cp "${LE_LIVE}/fullchain.pem" "${SSL_TARGET_DIR}/cert.pem"
   cp "${LE_LIVE}/privkey.pem" "${SSL_TARGET_DIR}/key.pem"
   chmod 644 "${SSL_TARGET_DIR}/cert.pem" || true
