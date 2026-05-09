@@ -1,5 +1,7 @@
 #!/bin/bash
 set -e
+DOMAIN_INPUT="piheartbeatmonitor.cloud"
+CERT_EMAIL="admin@piheartbeatmonitor.cloud"
 PROJECT_NAME="activation-system"
 COMPOSE_FILE="docker-compose.yml"
 ENV_FILE=".env.production"
@@ -54,50 +56,28 @@ check_config() {
 }
 create_default_env_file() {
     cat > "$ENV_FILE" << 'EOF'
-# 生产环境配置
-# 请修改以下配置值以确保安全性
-
 NODE_ENV=production
 PORT=7030
 ADMIN_PORT=7030
-
-# 数据库配置
 MONGODB_URI=mongodb://admin:password@mongodb:27017/activation_system?authSource=admin
 MONGO_ROOT_USERNAME=admin
 MONGO_ROOT_PASSWORD=password
-
-# JWT配置 - 重要：请修改为安全的随机字符串
 JWT_SECRET=your-production-jwt-secret-key-change-this-in-production-32-chars-minimum
 JWT_EXPIRES_IN=24h
 REFRESH_TOKEN_EXPIRES_IN=7d
-
-# 会话配置 - 重要：请修改为安全的随机字符串
 SESSION_SECRET=your-production-session-secret-key-change-this-in-production
-
-# CORS配置
 CORS_ORIGIN=https://yourdomain.com,http://localhost:7030
-
-# 加密配置 - 重要：请修改为安全的随机字符串
 ENCRYPTION_KEY=your-32-character-encryption-key-for-production-only
-
-# 管理员配置
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=change-this-password-in-production
 ADMIN_EMAIL=admin@yourdomain.com
-
-# 激活配置
 DEFAULT_LICENSE_DURATION=365
 MAX_LICENSE_DURATION=3650
 LICENSE_CHECK_INTERVAL=3600000
-
-# 文件上传配置
 MAX_FILE_SIZE=10485760
 UPLOAD_PATH=./uploads
-
-# 日志配置
 LOG_LEVEL=info
 LOG_FILE=./logs/app.log
-
 EOF
     log_info "已创建默认配置文件: $ENV_FILE"
     log_warn "请编辑 $ENV_FILE 文件并修改默认的密码和密钥"
@@ -345,7 +325,6 @@ EOF
 Description=Activation System Service
 After=docker.service
 Requires=docker.service
-
 [Service]
 Type=oneshot
 RemainAfterExit=yes
@@ -355,7 +334,6 @@ ExecStart=$(pwd)/deploy.sh start
 ExecStop=$(pwd)/deploy.sh stop
 StandardOutput=journal
 StandardError=journal
-
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -381,8 +359,8 @@ EOF
         openssl req -x509 -newkey rsa:4096 -keyout docker/ssl/key.pem -out docker/ssl/cert.pem -days 365 -nodes -subj "/C=CN/ST=State/L=City/O=Organization/CN=localhost"
         sudo chown -R activation:activation docker/ssl
     fi
-    if [ -n "${DOMAIN:-}" ] && [ -n "${EMAIL:-}" ]; then
-        log_info "尝试使用 Let's Encrypt 获取证书：$DOMAIN"
+    if [ -n "${DOMAIN_INPUT:-}" ] && [ -n "${CERT_EMAIL:-}" ]; then
+        log_info "尝试使用 Let's Encrypt 获取证书：$DOMAIN_INPUT"
         HOST_SERVICES=("apache2" "httpd")
         STOPPED_HOST_SERVICES=()
         for svc in "${HOST_SERVICES[@]}"; do
@@ -413,12 +391,8 @@ setup_https_certificate() {
     log_info "开始配置HTTPS证书..."
     DOCKER_COMPOSE_CMD=$(get_docker_compose_cmd)
     if ! $DOCKER_COMPOSE_CMD ps | grep -q nginx; then log_error "未找到nginx服务，请先安装系统: $0 install"; exit 1; fi
-    read -p "请输入域名（可空格分隔多个，例如 example.com www.example.com）: " DOMAIN_INPUT
-    DOMAIN_INPUT=$(echo "$DOMAIN_INPUT" | xargs)
-    if [ -z "$DOMAIN_INPUT" ]; then log_error "域名不能为空"; exit 1; fi
+    if [ -z "$DOMAIN_INPUT" ] || [ "$DOMAIN_INPUT" == "example.com" ]; then log_error "请在脚本头部配置实际的 DOMAIN_INPUT 变量"; exit 1; fi
     PRIMARY_DOMAIN=$(echo "$DOMAIN_INPUT" | awk '{print $1}')
-    read -p "请输入证书通知邮箱(可选，回车跳过): " CERT_EMAIL
-    CERT_EMAIL=$(echo "$CERT_EMAIL" | xargs)
     if $DOCKER_COMPOSE_CMD ps nginx | grep -q "Up"; then $DOCKER_COMPOSE_CMD stop nginx; sleep 5; fi
     log_info "检查80端口可用性..."
     WAIT_PORT=80
@@ -484,11 +458,9 @@ server {
     server_name $DOMAIN_INPUT;
     return 301 https://\$host\$request_uri;
 }
-
 server {
     listen 443 ssl http2;
     server_name $DOMAIN_INPUT;
-
     ssl_certificate /etc/letsencrypt/live/$PRIMARY_DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/$PRIMARY_DOMAIN/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -542,48 +514,51 @@ EOF
         cat > scripts/renew-certs.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-DOMAIN="${DOMAIN:-piheartbeatmonitor.cloud}"
-LE_LIVE="/etc/letsencrypt/live/${DOMAIN}"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+DOMAIN_DIR=$(ls -1 /etc/letsencrypt/live/ | grep -v "README" | head -n 1)
+LE_LIVE="/etc/letsencrypt/live/${DOMAIN_DIR}"
 SSL_TARGET_DIR="${PROJECT_ROOT}/docker/ssl"
 LOG_FILE="/var/log/renew-certs.log"
-echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] Starting cert renewal for ${DOMAIN}" >> "${LOG_FILE}"
-if command -v certbot >/dev/null 2>&1; then
-  certbot renew --quiet --deploy-hook "true" >> "${LOG_FILE}" 2>&1 || true
-else
-  echo "certbot not found, skipping renewal" >> "${LOG_FILE}"
-fi
+echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] Starting cert renewal" >> "${LOG_FILE}"
+docker run --rm -v "${PROJECT_ROOT}/docker/nginx/html:/var/www/html" -v /etc/letsencrypt:/etc/letsencrypt certbot/certbot renew --quiet >> "${LOG_FILE}" 2>&1 || true
 if [ -f "${LE_LIVE}/fullchain.pem" ] && [ -f "${LE_LIVE}/privkey.pem" ]; then
-  mkdir -p "${SSL_TARGET_DIR}"
   cp "${LE_LIVE}/fullchain.pem" "${SSL_TARGET_DIR}/cert.pem"
   cp "${LE_LIVE}/privkey.pem" "${SSL_TARGET_DIR}/key.pem"
   chmod 644 "${SSL_TARGET_DIR}/cert.pem" || true
   chmod 600 "${SSL_TARGET_DIR}/key.pem" || true
-  echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] Copied certs to ${SSL_TARGET_DIR}" >> "${LOG_FILE}"
-  if command -v docker >/dev/null 2>&1; then
-    if docker compose version >/dev/null 2>&1; then
-      docker compose restart nginx >> "${LOG_FILE}" 2>&1 || true
-    else
-      docker-compose restart nginx >> "${LOG_FILE}" 2>&1 || true
-    fi
-    echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] Reloaded nginx container" >> "${LOG_FILE}"
+  cd "${PROJECT_ROOT}"
+  if docker compose version >/dev/null 2>&1; then
+    docker compose restart nginx >> "${LOG_FILE}" 2>&1 || true
+  else
+    docker-compose restart nginx >> "${LOG_FILE}" 2>&1 || true
   fi
-else
-  echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] Live certs not found at ${LE_LIVE}, nothing to copy" >> "${LOG_FILE}"
 fi
-echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] Renewal script finished" >> "${LOG_FILE}"
 EOF
         chmod +x scripts/renew-certs.sh || true
     fi
-    if [ -n "${DOMAIN:-}" ]; then
-        if command -v crontab >/dev/null 2>&1; then
-            CRON_CMD="0 3 1 * * /bin/bash $(pwd)/scripts/renew-wrapper.sh >> /var/log/renew-certs.log 2>&1"
-            (crontab -l 2>/dev/null | grep -F "$CRON_CMD") || (crontab -l 2>/dev/null; echo "$CRON_CMD") | crontab -
-        fi
+    if command -v crontab >/dev/null 2>&1; then
+        CRON_CMD="0 3 * * 1 /bin/bash $(pwd)/scripts/renew-certs.sh >> /var/log/renew-certs.log 2>&1"
+        (crontab -l 2>/dev/null | grep -F "$CRON_CMD") || (crontab -l 2>/dev/null | grep -v "renew-certs.sh"; echo "$CRON_CMD") | crontab -
     fi
     log_info "HTTPS证书配置完成！"
     log_info "访问地址: https://$PRIMARY_DOMAIN"
-    log_info "证书将每月自动续签，无需手动操作"
+    log_info "证书将每周自动检查续签状态，无需手动操作"
+}
+setup_auto_renewal() {
+    log_info "配置并测试自动续签..."
+    if [ ! -f "scripts/renew-certs.sh" ]; then
+        log_error "未找到续签脚本，请先执行选项 2 配置HTTPS证书"
+        exit 1
+    fi
+    if command -v crontab >/dev/null 2>&1; then
+        CRON_CMD="0 3 * * 1 /bin/bash $(pwd)/scripts/renew-certs.sh >> /var/log/renew-certs.log 2>&1"
+        (crontab -l 2>/dev/null | grep -F "$CRON_CMD") || (crontab -l 2>/dev/null | grep -v "renew-certs.sh"; echo "$CRON_CMD") | crontab -
+        log_info "已确保定时续签任务添加到 crontab"
+    fi
+    log_info "正在手动触发续签测试..."
+    /bin/bash scripts/renew-certs.sh
+    log_info "续签任务执行完成"
+    log_info "请使用命令查看详细日志: cat /var/log/renew-certs.log"
 }
 uninstall_system() {
     log_warn "开始系统卸载..."
@@ -620,85 +595,69 @@ show_menu() {
     echo "安装与配置:"
     echo " 1完整安装系统（依赖、用户、服务等）"
     echo " 2配置HTTPS证书（Let's Encrypt）"
+    echo " 3配置并测试自动续签"
     echo "服务管理:"
-    echo " 3启动服务"
-    echo " 4停止服务"
-    echo " 5重启服务"
-    echo " 6显示服务状态"
+    echo " 4启动服务"
+    echo " 5停止服务"
+    echo " 6重启服务"
+    echo " 7显示服务状态"
     echo "维护工具:"
-    echo " 7显示服务日志"
-    echo " 8备份数据"
-    echo " 9更新应用"
-    echo " 10 清理服务器缓存和日志"
-    echo " 11清理Docker资源"
+    echo " 8显示服务日志"
+    echo " 9备份数据"
+    echo " 10更新应用"
+    echo " 11清理服务器缓存和日志"
+    echo " 12清理Docker资源"
     echo "其他:"
-    echo " 12完全卸载系统（删除服务、数据等）"
-    echo " 13显示帮助信息"
+    echo " 13完全卸载系统（删除服务、数据等）"
+    echo " 14显示帮助信息"
     echo " 0退出脚本"
-    read -p "请输入选项 [0-13] (默认0): " choice
+    read -p "请输入选项 [0-14] (默认0): " choice
     choice=${choice:-0}
     echo ""
     case $choice in
         1) main install ;;
         2) main ssl ;;
-        3) main start ;;
-        4) main stop ;;
-        5) main restart ;;
-        6) main status ;;
-        7) main logs ;;
-        8) main backup ;;
-        9) main update ;;
-        10) main clean ;;
-        11) main cleanup ;;
-        12) main uninstall ;;
-        13) main help ;;
+        3) main renew ;;
+        4) main start ;;
+        5) main stop ;;
+        6) main restart ;;
+        7) main status ;;
+        8) main logs ;;
+        9) main backup ;;
+        10) main update ;;
+        11) main clean ;;
+        12) main cleanup ;;
+        13) main uninstall ;;
+        14) main help ;;
         0) exit 0 ;;
         *) log_error "无效选项: $choice"; show_menu ;;
     esac
 }
 show_help() {
     echo "软件授权与激活系统 - 部署脚本"
-    echo ""
     echo "使用方法: $0 [命令]"
-    echo ""
     echo "可用命令:"
-    echo "  install     完整安装系统（依赖、用户、服务等）"
-    echo "  ssl         配置HTTPS证书（Let's Encrypt）"
-    echo "  certificate 配置HTTPS证书（与ssl相同）"
-    echo "  uninstall   完全卸载系统（删除服务、数据等）"
-    echo "  start       启动服务"
-    echo "  stop        停止服务"
-    echo "  restart     重启服务"
-    echo "  logs        显示日志"
-    echo "  status      显示状态"
-    echo "  backup      备份数据"
-    echo "  update      更新应用"
-    echo "  clean       清理服务器缓存和日志"
-    echo "  cleanup     清理资源"
-    echo "  menu        显示交互式菜单"
-    echo "  help        显示此帮助信息"
-    echo ""
-    echo "安装说明:"
-    echo "  1. $0 install   # 完整安装系统"
-    echo "  2. 编辑 .env.production 配置参数"
-    echo "  3. $0 start     # 启动服务"
-    echo "  4. $0 ssl       # 配置HTTPS证书（可选）"
-    echo ""
-    echo "SSL证书配置说明:"
-    echo "  $0 ssl          # 使用Docker certbot申请Let's Encrypt证书并配置HTTPS"
-    echo "  需要域名已解析到服务器IP，且80端口可用"
-    echo ""
-    echo "卸载说明:"
-    echo "  $0 uninstall    # 完全卸载系统"
-    echo ""
+    echo "  install      完整安装系统（依赖、用户、服务等）"
+    echo "  ssl          配置HTTPS证书（Let's Encrypt）"
+    echo "  certificate  配置HTTPS证书（与ssl相同）"
+    echo "  renew        配置并测试自动续签"
+    echo "  uninstall    完全卸载系统（删除服务、数据等）"
+    echo "  start        启动服务"
+    echo "  stop         停止服务"
+    echo "  restart      重启服务"
+    echo "  logs         显示日志"
+    echo "  status       显示状态"
+    echo "  backup       备份数据"
+    echo "  update       更新应用"
+    echo "  clean        清理服务器缓存和日志"
+    echo "  cleanup      清理资源"
+    echo "  menu         显示交互式菜单"
+    echo "  help         显示此帮助信息"
     echo "示例:"
     echo "  $0 install     # 安装系统"
     echo "  $0 start       # 启动服务"
     echo "  $0 ssl         # 配置HTTPS证书"
-    echo "  $0 menu        # 显示交互菜单"
-    echo "  $0 logs        # 查看日志"
-    echo "  $0 backup      # 备份数据"
-    echo "  $0 uninstall   # 卸载系统"
+    echo "  $0 renew       # 手动触发证书续签"
 }
 main() {
     if [ $# -eq 0 ]; then show_menu; return; fi
@@ -710,6 +669,10 @@ main() {
         ssl|certificate)
             if [ "$EUID" -ne 0 ]; then log_error "SSL证书配置需要root权限，请使用 sudo $0 ssl"; exit 1; fi
             setup_https_certificate
+            ;;
+        renew)
+            if [ "$EUID" -ne 0 ]; then log_error "配置自动续签需要root权限，请使用 sudo $0 renew"; exit 1; fi
+            setup_auto_renewal
             ;;
         uninstall)
             if [ "$EUID" -ne 0 ]; then log_error "卸载需要root权限，请使用 sudo $0 uninstall"; exit 1; fi
@@ -732,10 +695,8 @@ main() {
         menu) show_menu ;;
         help) show_help ;;
         *)
-            if [ $# -eq 0 ]; then show_menu; else log_error "未知命令: $1"; echo ""; show_help; exit 1; fi
+            if [ $# -eq 0 ]; then show_menu; else log_error "未知命令: $1"; show_help; exit 1; fi
             ;;
     esac
 }
 main "$@"
-
-
