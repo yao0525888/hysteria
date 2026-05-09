@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
-DOMAIN_INPUT="piheartbeatmonitor.cloud"
-CERT_EMAIL="admin@piheartbeatmonitor.cloud"
+DOMAIN_INPUT="heartbeatmonitor.cloud"
+CERT_EMAIL="admin@heartbeatmonitor.cloud"
 PROJECT_NAME="activation-system"
 COMPOSE_FILE="docker-compose.yml"
 ENV_FILE=".env.production"
