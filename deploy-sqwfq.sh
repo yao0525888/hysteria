@@ -457,7 +457,13 @@ EOF
 server {
     listen 80;
     server_name $DOMAIN_INPUT;
-    return 301 https://\$host\$request_uri;
+    location /.well-known/acme-challenge/ {
+        alias /var/www/html/.well-known/acme-challenge/;
+        try_files \$uri =404;
+    }
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
 }
 server {
     listen 443 ssl http2;
@@ -474,6 +480,10 @@ server {
     add_header X-XSS-Protection "1; mode=block" always;
     access_log /var/log/nginx/access.log;
     error_log /var/log/nginx/error.log;
+    location /.well-known/acme-challenge/ {
+        alias /var/www/html/.well-known/acme-challenge/;
+        try_files \$uri =404;
+    }
     location /api/ {
         proxy_pass http://app:7030/api/;
         proxy_set_header Host \$host;
@@ -532,11 +542,8 @@ if [ -f "${LE_LIVE}/fullchain.pem" ] && [ -f "${LE_LIVE}/privkey.pem" ]; then
   cp "${LE_LIVE}/privkey.pem" "${SSL_TARGET_DIR}/key.pem"
   chmod 644 "${SSL_TARGET_DIR}/cert.pem" || true
   chmod 600 "${SSL_TARGET_DIR}/key.pem" || true
-  cd "${PROJECT_ROOT}"
-  if docker compose version >/dev/null 2>&1; then
-    docker compose restart nginx >> "${LOG_FILE}" 2>&1 || true
-  else
-    docker-compose restart nginx >> "${LOG_FILE}" 2>&1 || true
+  if command -v docker >/dev/null 2>&1; then
+    docker restart $(docker ps -q -f name=nginx) >> "${LOG_FILE}" 2>&1 || true
   fi
 fi
 EOF
@@ -584,8 +591,8 @@ show_menu() {
     echo ""
     echo "请选择操作："
     echo "安装与配置:"
-    echo " 1完整安装系统（依赖、用户、服务等）"
-    echo " 2配置HTTPS证书（Let's Encrypt）"
+    echo " 1完整安装系统"
+    echo " 2配置HTTPS证书"
     echo " 3配置并测试自动续签"
     echo "服务管理:"
     echo " 4启动服务"
@@ -599,7 +606,7 @@ show_menu() {
     echo " 11清理服务器缓存和日志"
     echo " 12清理Docker资源"
     echo "其他:"
-    echo " 13完全卸载系统（删除服务、数据等）"
+    echo " 13完全卸载系统"
     echo " 14显示帮助信息"
     echo " 0退出脚本"
     read -p "请输入选项 [0-14] (默认0): " choice
@@ -628,11 +635,11 @@ show_help() {
     echo "软件授权与激活系统 - 部署脚本"
     echo "使用方法: $0 [命令]"
     echo "可用命令:"
-    echo "  install      完整安装系统（依赖、用户、服务等）"
-    echo "  ssl          配置HTTPS证书（Let's Encrypt）"
-    echo "  certificate  配置HTTPS证书（与ssl相同）"
+    echo "  install      完整安装系统"
+    echo "  ssl          配置HTTPS证书"
+    echo "  certificate  配置HTTPS证书"
     echo "  renew        配置并测试自动续签"
-    echo "  uninstall    完全卸载系统（删除服务、数据等）"
+    echo "  uninstall    完全卸载系统"
     echo "  start        启动服务"
     echo "  stop         停止服务"
     echo "  restart      重启服务"
@@ -644,29 +651,24 @@ show_help() {
     echo "  cleanup      清理资源"
     echo "  menu         显示交互式菜单"
     echo "  help         显示此帮助信息"
-    echo "示例:"
-    echo "  $0 install     # 安装系统"
-    echo "  $0 start       # 启动服务"
-    echo "  $0 ssl         # 配置HTTPS证书"
-    echo "  $0 renew       # 手动触发证书续签"
 }
 main() {
     if [ $# -eq 0 ]; then show_menu; return; fi
     case "$1" in
         install)
-            if [ "$EUID" -ne 0 ]; then log_error "安装需要root权限，请使用 sudo $0 install"; exit 1; fi
+            if [ "$EUID" -ne 0 ]; then log_error "需要root权限"; exit 1; fi
             install_system
             ;;
         ssl|certificate)
-            if [ "$EUID" -ne 0 ]; then log_error "SSL证书配置需要root权限，请使用 sudo $0 ssl"; exit 1; fi
+            if [ "$EUID" -ne 0 ]; then log_error "需要root权限"; exit 1; fi
             setup_https_certificate
             ;;
         renew)
-            if [ "$EUID" -ne 0 ]; then log_error "配置自动续签需要root权限，请使用 sudo $0 renew"; exit 1; fi
+            if [ "$EUID" -ne 0 ]; then log_error "需要root权限"; exit 1; fi
             setup_auto_renewal
             ;;
         uninstall)
-            if [ "$EUID" -ne 0 ]; then log_error "卸载需要root权限，请使用 sudo $0 uninstall"; exit 1; fi
+            if [ "$EUID" -ne 0 ]; then log_error "需要root权限"; exit 1; fi
             uninstall_system
             ;;
         start)
