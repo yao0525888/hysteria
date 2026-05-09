@@ -87,6 +87,7 @@ create_directories() {
     mkdir -p logs
     mkdir -p uploads
     mkdir -p docker/ssl
+    mkdir -p scripts
     chmod 755 logs
     chmod 755 uploads
     log_info "目录创建完成"
@@ -510,8 +511,12 @@ EOF
     sleep 5
     if $DOCKER_COMPOSE_CMD ps nginx | grep -q "Up"; then log_info "nginx HTTPS配置成功"; else log_error "nginx启动失败，请检查配置"; $DOCKER_COMPOSE_CMD logs nginx; exit 1; fi
     for svc in "${STOPPED_HOST_SERVICES[@]}"; do log_info "恢复宿主服务 $svc"; systemctl start "$svc" 2>/dev/null || true; done
-    if [ ! -f "scripts/renew-certs.sh" ]; then
-        cat > scripts/renew-certs.sh <<'EOF'
+    setup_auto_renewal
+}
+setup_auto_renewal() {
+    log_info "配置并测试自动续签..."
+    mkdir -p scripts
+    cat > scripts/renew-certs.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -534,22 +539,7 @@ if [ -f "${LE_LIVE}/fullchain.pem" ] && [ -f "${LE_LIVE}/privkey.pem" ]; then
   fi
 fi
 EOF
-        chmod +x scripts/renew-certs.sh || true
-    fi
-    if command -v crontab >/dev/null 2>&1; then
-        CRON_CMD="0 3 * * 1 /bin/bash $(pwd)/scripts/renew-certs.sh >> /var/log/renew-certs.log 2>&1"
-        (crontab -l 2>/dev/null | grep -F "$CRON_CMD") || (crontab -l 2>/dev/null | grep -v "renew-certs.sh"; echo "$CRON_CMD") | crontab -
-    fi
-    log_info "HTTPS证书配置完成！"
-    log_info "访问地址: https://$PRIMARY_DOMAIN"
-    log_info "证书将每周自动检查续签状态，无需手动操作"
-}
-setup_auto_renewal() {
-    log_info "配置并测试自动续签..."
-    if [ ! -f "scripts/renew-certs.sh" ]; then
-        log_error "未找到续签脚本，请先执行选项 2 配置HTTPS证书"
-        exit 1
-    fi
+    chmod +x scripts/renew-certs.sh || true
     if command -v crontab >/dev/null 2>&1; then
         CRON_CMD="0 3 * * 1 /bin/bash $(pwd)/scripts/renew-certs.sh >> /var/log/renew-certs.log 2>&1"
         (crontab -l 2>/dev/null | grep -F "$CRON_CMD") || (crontab -l 2>/dev/null | grep -v "renew-certs.sh"; echo "$CRON_CMD") | crontab -
