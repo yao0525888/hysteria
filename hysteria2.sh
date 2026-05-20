@@ -301,7 +301,6 @@ menu() {
     echo -e " ${RED}6.${PLAIN} 卸载 实例2"
     echo -e " ${GREEN}7.${PLAIN} 管理 实例2 (启停/配置)"
     echo -e " ${GREEN}8.${PLAIN} 修改 实例2 端口"
-    echo "-------------------------------------------------------------"
     echo -e " ${GREEN}0.${PLAIN} 退出"
     read -rp "请输入选项 [0-8]: " menuInput
     case $menuInput in
