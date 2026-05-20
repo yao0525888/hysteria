@@ -209,6 +209,7 @@ uninstall_hy2() {
     systemctl daemon-reload
     green "$INST_NAME 已完全卸载！"
     sleep 2
+    menu
 }
 start_hy2() {
     set_instance_vars $1
@@ -247,7 +248,7 @@ change_port() {
     if [[ ! $new_port =~ ^[0-9]+$ ]] || [[ $new_port -lt 1 ]] || [[ $new_port -gt 65535 ]]; then
         red "端口号无效"
         sleep 2
-        instance_control_menu $1
+        menu
         return
     fi
     if [ -f $CONF_DIR/config.yaml ]; then sed -i "s/^listen: :[0-9]\+/listen: :$new_port/" $CONF_DIR/config.yaml; fi
@@ -262,7 +263,7 @@ change_port() {
         red "服务重启失败，请检查端口是否被占用！"
     fi
     sleep 2
-    instance_control_menu $1
+    menu
 }
 instance_control_menu() {
     set_instance_vars $1
@@ -274,17 +275,13 @@ instance_control_menu() {
     echo -e " ${GREEN}2.${PLAIN} 停止该实例"
     echo -e " ${GREEN}3.${PLAIN} 重启该实例"
     echo -e " ${GREEN}4.${PLAIN} 显示配置及分享链接"
-    echo -e " ${GREEN}5.${PLAIN} 修改端口"
-    echo -e " ${RED}6.${PLAIN} 卸载该实例"
     echo -e " ${GREEN}0.${PLAIN} 返回主菜单"
-    read -rp "请输入选项 [0-6]: " action
+    read -rp "请输入选项 [0-4]: " action
     case $action in
         1) start_hy2 $1; sleep 2; instance_control_menu $1 ;;
         2) stop_hy2 $1; sleep 2; instance_control_menu $1 ;;
         3) restart_hy2 $1; sleep 2; instance_control_menu $1 ;;
         4) show_config $1; instance_control_menu $1 ;;
-        5) change_port $1 ;;
-        6) uninstall_hy2 $1; menu ;;
         0) menu ;;
         *) instance_control_menu $1 ;;
     esac
@@ -296,18 +293,26 @@ menu() {
     echo "#############################################################"
     echo -e " ${YELLOW}--- 实例 1 (默认) ---${PLAIN}"
     echo -e " ${GREEN}1.${PLAIN} 安装 实例1"
-    echo -e " ${GREEN}2.${PLAIN} 管理 实例1 (启停/配置/端口/卸载)"
+    echo -e " ${RED}2.${PLAIN} 卸载 实例1"
+    echo -e " ${GREEN}3.${PLAIN} 管理 实例1 (启停/配置)"
+    echo -e " ${GREEN}4.${PLAIN} 修改 实例1 端口"
     echo -e " ${YELLOW}--- 实例 2 ---${PLAIN}"
-    echo -e " ${GREEN}3.${PLAIN} 安装 实例2"
-    echo -e " ${GREEN}4.${PLAIN} 管理 实例2 (启停/配置/端口/卸载)"
+    echo -e " ${GREEN}5.${PLAIN} 安装 实例2"
+    echo -e " ${RED}6.${PLAIN} 卸载 实例2"
+    echo -e " ${GREEN}7.${PLAIN} 管理 实例2 (启停/配置)"
+    echo -e " ${GREEN}8.${PLAIN} 修改 实例2 端口"
     echo "-------------------------------------------------------------"
     echo -e " ${GREEN}0.${PLAIN} 退出"
-    read -rp "请输入选项 [0-4]: " menuInput
+    read -rp "请输入选项 [0-8]: " menuInput
     case $menuInput in
         1) install_hy2 1 ;;
-        2) if [[ -d "/etc/hysteria" ]]; then instance_control_menu 1; else red "实例1未安装"; sleep 2; menu; fi ;;
-        3) install_hy2 2 ;;
-        4) if [[ -d "/etc/hysteria2" ]]; then instance_control_menu 2; else red "实例2未安装"; sleep 2; menu; fi ;;
+        2) if [[ -d "/etc/hysteria" ]]; then uninstall_hy2 1; else red "实例1未安装"; sleep 2; menu; fi ;;
+        3) if [[ -d "/etc/hysteria" ]]; then instance_control_menu 1; else red "实例1未安装"; sleep 2; menu; fi ;;
+        4) if [[ -d "/etc/hysteria" ]]; then change_port 1; else red "实例1未安装"; sleep 2; menu; fi ;;
+        5) install_hy2 2 ;;
+        6) if [[ -d "/etc/hysteria2" ]]; then uninstall_hy2 2; else red "实例2未安装"; sleep 2; menu; fi ;;
+        7) if [[ -d "/etc/hysteria2" ]]; then instance_control_menu 2; else red "实例2未安装"; sleep 2; menu; fi ;;
+        8) if [[ -d "/etc/hysteria2" ]]; then change_port 2; else red "实例2未安装"; sleep 2; menu; fi ;;
         0) exit 0 ;;
         *) menu ;;
     esac
