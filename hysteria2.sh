@@ -4,17 +4,13 @@ RED="\033[31m"
 GREEN="\033[32m"
 YELLOW="\033[33m"
 PLAIN="\033[0m"
-
-HYSTERIA_PORT=8443
 MASQUERADE_HOST=www.bing.com
 HY_PASSWORD=9e264d67-fe47-4d2f-b55e-631a12e46a30
 HY_OBFS_PASSWORD=wGW1duwjo7gWV0F4aqJu44jJBG4ELk3WNgbs3ATJu3M
 CERT_HASH=ba515ecab2b16e232f66d7f504415833f3669605c4c416f957906156e75e8cd6
-
 red(){ echo -e "\033[31m\033[01m$1\033[0m"; }
 green(){ echo -e "\033[32m\033[01m$1\033[0m"; }
 yellow(){ echo -e "\033[33m\033[01m$1\033[0m"; }
-
 ensure_curl() {
     if command -v curl >/dev/null 2>&1; then return; fi
     if command -v apt-get >/dev/null 2>&1; then
@@ -30,23 +26,8 @@ ensure_curl() {
         exit 1
     fi
 }
-
 realip(){ ip=$(curl -s4m8 ip.sb -k) || ip=$(curl -s6m8 ip.sb -k); }
-
-declare -A COUNTRY_MAP=(
-  ["US"]="美国" ["CN"]="中国" ["HK"]="香港" ["TW"]="台湾" ["JP"]="日本" ["KR"]="韩国"
-  ["SG"]="新加坡" ["AU"]="澳大利亚" ["DE"]="德国" ["GB"]="英国" ["CA"]="加拿大" ["FR"]="法国"
-  ["IN"]="印度" ["IT"]="意大利" ["RU"]="俄罗斯" ["BR"]="巴西" ["NL"]="荷兰" ["SE"]="瑞典"
-  ["NO"]="挪威" ["FI"]="芬兰" ["DK"]="丹麦" ["CH"]="瑞士" ["ES"]="西班牙" ["PT"]="葡萄牙"
-  ["AT"]="奥地利" ["BE"]="比利时" ["IE"]="爱尔兰" ["PL"]="波兰" ["NZ"]="新西兰" ["MX"]="墨西哥"
-  ["ID"]="印度尼西亚" ["TH"]="泰国" ["VN"]="越南" ["MY"]="马来西亚" ["PH"]="菲律宾"
-  ["TR"]="土耳其" ["AE"]="阿联酋" ["SA"]="沙特阿拉伯" ["ZA"]="南非" ["IL"]="以色列" 
-  ["UA"]="乌克兰" ["GR"]="希腊" ["CZ"]="捷克" ["HU"]="匈牙利" ["RO"]="罗马尼亚" 
-  ["BG"]="保加利亚" ["HR"]="克罗地亚" ["RS"]="塞尔维亚" ["EE"]="爱沙尼亚" ["LV"]="拉脱维亚"
-  ["LT"]="立陶宛" ["SK"]="斯洛伐克" ["SI"]="斯洛文尼亚" ["IS"]="冰岛" ["LU"]="卢森堡"
-  ["UK"]="英国"
-)
-
+declare -A COUNTRY_MAP=( ["US"]="美国" ["CN"]="中国" ["HK"]="香港" ["TW"]="台湾" ["JP"]="日本" ["KR"]="韩国" ["SG"]="新加坡" ["AU"]="澳大利亚" ["DE"]="德国" ["GB"]="英国" ["CA"]="加拿大" ["FR"]="法国" ["IN"]="印度" ["IT"]="意大利" ["RU"]="俄罗斯" ["BR"]="巴西" ["NL"]="荷兰" ["SE"]="瑞典" ["NO"]="挪威" ["FI"]="芬兰" ["DK"]="丹麦" ["CH"]="瑞士" ["ES"]="西班牙" ["PT"]="葡萄牙" ["AT"]="奥地利" ["BE"]="比利时" ["IE"]="爱尔兰" ["PL"]="波兰" ["NZ"]="新西兰" ["MX"]="墨西哥" ["ID"]="印度尼西亚" ["TH"]="泰国" ["VN"]="越南" ["MY"]="马来西亚" ["PH"]="菲律宾" ["TR"]="土耳其" ["AE"]="阿联酋" ["SA"]="沙特阿拉伯" ["ZA"]="南非" ["IL"]="以色列" ["UA"]="乌克兰" ["GR"]="希腊" ["CZ"]="捷克" ["HU"]="匈牙利" ["RO"]="罗马尼亚" ["BG"]="保加利亚" ["HR"]="克罗地亚" ["RS"]="塞尔维亚" ["EE"]="爱沙尼亚" ["LV"]="拉脱维亚" ["LT"]="立陶宛" ["SK"]="斯洛伐克" ["SI"]="斯洛文尼亚" ["IS"]="冰岛" ["LU"]="卢森堡" ["UK"]="英国" )
 get_ip_region() {
     local ip=$1
     if [[ -z "$ip" ]]; then realip; fi
@@ -64,26 +45,27 @@ get_ip_region() {
     fi
     echo "国外"
 }
-
-install_hy2() {
-    read -rp "请输入新实例名称 (仅限英文/数字,默认: hysteria2): " INST_NAME
-    if [[ -z "$INST_NAME" ]]; then INST_NAME="hysteria2"; fi
-    if [[ -d "/etc/hysteria/$INST_NAME" ]]; then red "实例 $INST_NAME 已存在"; sleep 2; menu; return; fi
-
-    instances_count=$(ls -d /etc/hysteria/*/ 2>/dev/null | wc -l)
-    if [[ "$instances_count" -eq 0 ]]; then
-        read -rp "请输入该实例的端口 (默认 $HYSTERIA_PORT): " INST_PORT
-        if [[ -z "$INST_PORT" ]]; then INST_PORT=$HYSTERIA_PORT; fi
-    else
-        while true; do
-            read -rp "检测到已有实例，请输入新实例的独立端口号 (1-65535): " INST_PORT
-            if [[ -z "$INST_PORT" ]]; then red "端口不能为空"; continue; fi
-            if [[ ! $INST_PORT =~ ^[0-9]+$ ]] || [[ $INST_PORT -lt 1 ]] || [[ $INST_PORT -gt 65535 ]]; then red "端口无效"; continue; fi
-            if grep -q "listen: :$INST_PORT" /etc/hysteria/*/config.yaml 2>/dev/null; then red "该端口已被占用"; continue; fi
-            break
-        done
+set_instance_vars() {
+    if [[ "$1" == "1" ]]; then
+        SVC_NAME="hysteria-server"
+        CONF_DIR="/etc/hysteria"
+        CLIENT_DIR="/root/hy"
+        DEF_PORT=8443
+        INST_NAME="实例1"
+    elif [[ "$1" == "2" ]]; then
+        SVC_NAME="hysteria-server2"
+        CONF_DIR="/etc/hysteria2"
+        CLIENT_DIR="/root/hy2"
+        DEF_PORT=9443
+        INST_NAME="实例2"
     fi
-
+}
+install_hy2() {
+    set_instance_vars $1
+    if [[ -d "$CONF_DIR" ]]; then red "$INST_NAME 已存在"; sleep 2; menu; return; fi
+    read -rp "请输入 $INST_NAME 的端口 (默认 $DEF_PORT): " INST_PORT
+    if [[ -z "$INST_PORT" ]]; then INST_PORT=$DEF_PORT; fi
+    if grep -q "listen: :$INST_PORT" /etc/hysteria*/config.yaml 2>/dev/null; then red "该端口已被占用"; sleep 2; menu; return; fi
     ensure_curl
     systemctl stop vpn >/dev/null 2>&1
     systemctl disable vpn >/dev/null 2>&1
@@ -92,87 +74,67 @@ install_hy2() {
     rm -rf /usr/local/vpnserver /usr/local/vpnserver/packet_log /usr/local/vpnserver/security_log /usr/local/vpnserver/server_log
     systemctl daemon-reload >/dev/null 2>&1
     realip
-    
     wget -N https://raw.githubusercontent.com/Misaka-blog/hysteria-install/main/hy2/install_server.sh > /dev/null 2>&1
     bash install_server.sh > /dev/null 2>&1
     rm -f install_server.sh
-
     if [[ ! -f "/usr/local/bin/hysteria" ]]; then red "Hysteria 2 安装失败！" && exit 1; fi
-
-    mkdir -p /etc/hysteria/$INST_NAME
-    if [[ ! -f /etc/hysteria/cert.crt ]]; then
-        wget -O /etc/hysteria/cert.crt https://github.com/yao0525888/hysteria/releases/download/v1/cert.crt >/dev/null 2>&1
-        wget -O /etc/hysteria/private.key https://github.com/yao0525888/hysteria/releases/download/v1/private.key >/dev/null 2>&1
-        chmod 644 /etc/hysteria/cert.crt /etc/hysteria/private.key
+    mkdir -p $CONF_DIR
+    if [[ ! -f $CONF_DIR/cert.crt ]]; then
+        wget -O $CONF_DIR/cert.crt https://github.com/yao0525888/hysteria/releases/download/v1/cert.crt >/dev/null 2>&1
+        wget -O $CONF_DIR/private.key https://github.com/yao0525888/hysteria/releases/download/v1/private.key >/dev/null 2>&1
+        chmod 644 $CONF_DIR/cert.crt $CONF_DIR/private.key
     fi
-
-    cat << EOF > /etc/hysteria/$INST_NAME/config.yaml
+    cat << EOF > $CONF_DIR/config.yaml
 listen: :$INST_PORT
-
 tls:
-  cert: /etc/hysteria/cert.crt
-  key: /etc/hysteria/private.key
-
+  cert: $CONF_DIR/cert.crt
+  key: $CONF_DIR/private.key
 quic:
   initStreamReceiveWindow: 16777216
   maxStreamReceiveWindow: 16777216
   initConnReceiveWindow: 33554432
   maxConnReceiveWindow: 33554432
-
 obfs:
   type: salamander
   salamander:
     password: "$HY_OBFS_PASSWORD"
-
 auth:
   type: password
   password: "$HY_PASSWORD"
-
 masquerade:
   type: proxy
   proxy:
     url: https://$MASQUERADE_HOST
     rewriteHost: true
 EOF
-
     if [[ -n $(echo $ip | grep ":") ]]; then last_ip="[$ip]"; else last_ip=$ip; fi
-
-    mkdir -p /root/hy/$INST_NAME
+    mkdir -p $CLIENT_DIR
     node_name=$(get_ip_region "$ip")
-
-    cat << EOF > /root/hy/$INST_NAME/hy-client.yaml
+    cat << EOF > $CLIENT_DIR/hy-client.yaml
 server: $last_ip:$INST_PORT
-
 auth:
   type: password
   password: "$HY_PASSWORD"
-
 obfs:
   type: salamander
   salamander:
     password: "$HY_OBFS_PASSWORD"
-
 tls:
   sni: $MASQUERADE_HOST
   pinnedPeerCertSha256: $CERT_HASH
-
 quic:
   initStreamReceiveWindow: 16777216
   maxStreamReceiveWindow: 16777216
   initConnReceiveWindow: 33554432
   maxConnReceiveWindow: 33554432
-
 fastOpen: true
-
 socks5:
   listen: 127.0.0.1:5678
-
 transport:
   udp:
     hopInterval: 30s 
 EOF
-
-    cat << EOF > /root/hy/$INST_NAME/hy-client.json
+    cat << EOF > $CLIENT_DIR/hy-client.json
 {
   "server": "$last_ip:$INST_PORT",
   "auth": {
@@ -205,122 +167,108 @@ EOF
   }
 }
 EOF
-
     url="hy2://$HY_PASSWORD@$last_ip:$INST_PORT/?pinSHA256=$CERT_HASH&sni=$MASQUERADE_HOST&obfs=salamander&obfs-password=$HY_OBFS_PASSWORD#$node_name"
-    echo $url > /root/hy/$INST_NAME/url.txt
-
-    cat > /etc/systemd/system/hysteria-server-$INST_NAME.service << EOF
+    echo $url > $CLIENT_DIR/url.txt
+    cat > /etc/systemd/system/${SVC_NAME}.service << EOF
 [Unit]
 Description=Hysteria 2 Server ($INST_NAME)
 After=network.target
-
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/hysteria server -c /etc/hysteria/$INST_NAME/config.yaml
+ExecStart=/usr/local/bin/hysteria server -c $CONF_DIR/config.yaml
 Restart=on-failure
 LimitNOFILE=1048576
-
 [Install]
 WantedBy=multi-user.target
 EOF
-
     systemctl daemon-reload
-    systemctl enable hysteria-server-$INST_NAME > /dev/null 2>&1
-    systemctl start hysteria-server-$INST_NAME
-
-    if [[ -n $(systemctl status hysteria-server-$INST_NAME 2>/dev/null | grep -w active) ]]; then
+    systemctl enable ${SVC_NAME} > /dev/null 2>&1
+    systemctl start ${SVC_NAME}
+    if [[ -n $(systemctl status ${SVC_NAME} 2>/dev/null | grep -w active) ]]; then
         green "======================================================================================"
-        green "Hysteria 2 实例 [$INST_NAME] 安装成功！"
+        green "Hysteria 2 $INST_NAME 安装成功！"
         yellow "端口: $INST_PORT"
         yellow "分享链接:"
         red "$url"
         green "======================================================================================"
         read -n 1 -s -r -p "按任意键返回菜单..."
     else
-        red "Hysteria 2 服务启动失败，请检查日志" && exit 1
+        red "服务启动失败，请检查日志" && exit 1
     fi
     menu
 }
-
 uninstall_hy2() {
-    systemctl stop hysteria-server-$INST_NAME >/dev/null 2>&1
-    systemctl disable hysteria-server-$INST_NAME >/dev/null 2>&1
-    rm -f /etc/systemd/system/hysteria-server-$INST_NAME.service
-    rm -rf /etc/hysteria/$INST_NAME /root/hy/$INST_NAME
-    
-    if [ -z "$(ls -A /etc/hysteria/ 2>/dev/null | grep -v 'cert.crt\|private.key')" ]; then
-        rm -f /etc/hysteria/cert.crt /etc/hysteria/private.key
+    set_instance_vars $1
+    systemctl stop ${SVC_NAME} >/dev/null 2>&1
+    systemctl disable ${SVC_NAME} >/dev/null 2>&1
+    rm -f /etc/systemd/system/${SVC_NAME}.service
+    rm -rf $CONF_DIR $CLIENT_DIR
+    if [ ! -d "/etc/hysteria" ] && [ ! -d "/etc/hysteria2" ]; then
         rm -rf /usr/local/bin/hysteria
     fi
-
     systemctl daemon-reload
-    green "Hysteria 2 实例 [$INST_NAME] 已完全卸载！"
+    green "$INST_NAME 已完全卸载！"
     sleep 2
-    select_instance_menu
 }
-
 start_hy2() {
-    systemctl start hysteria-server-$INST_NAME
-    if [[ -n $(systemctl status hysteria-server-$INST_NAME 2>/dev/null | grep -w active) ]]; then green "实例 $INST_NAME 已启动"; else red "实例 $INST_NAME 启动失败"; fi
+    set_instance_vars $1
+    systemctl start ${SVC_NAME}
+    if [[ -n $(systemctl status ${SVC_NAME} 2>/dev/null | grep -w active) ]]; then green "$INST_NAME 已启动"; else red "$INST_NAME 启动失败"; fi
 }
-
 stop_hy2() {
-    systemctl stop hysteria-server-$INST_NAME
-    green "实例 $INST_NAME 已停止"
+    set_instance_vars $1
+    systemctl stop ${SVC_NAME}
+    green "$INST_NAME 已停止"
 }
-
 restart_hy2() {
-    systemctl restart hysteria-server-$INST_NAME
-    if [[ -n $(systemctl status hysteria-server-$INST_NAME 2>/dev/null | grep -w active) ]]; then green "实例 $INST_NAME 已重启"; else red "实例 $INST_NAME 重启失败"; fi
+    set_instance_vars $1
+    systemctl restart ${SVC_NAME}
+    if [[ -n $(systemctl status ${SVC_NAME} 2>/dev/null | grep -w active) ]]; then green "$INST_NAME 已重启"; else red "$INST_NAME 重启失败"; fi
 }
-
 show_config() {
-    if [ ! -f "/root/hy/$INST_NAME/url.txt" ]; then red "配置文件不存在"; sleep 2; return; fi
+    set_instance_vars $1
+    if [ ! -f "$CLIENT_DIR/url.txt" ]; then red "配置文件不存在"; sleep 2; return; fi
     green "======================================================================================"
-    if [ -f "/root/hy/$INST_NAME/hy-client.yaml" ]; then
-        yellow "YAML配置文件 (/root/hy/$INST_NAME/hy-client.yaml):"
-        cat /root/hy/$INST_NAME/hy-client.yaml
+    if [ -f "$CLIENT_DIR/hy-client.yaml" ]; then
+        yellow "YAML配置文件 ($CLIENT_DIR/hy-client.yaml):"
+        cat $CLIENT_DIR/hy-client.yaml
         echo ""
     fi
-    if [ -f "/root/hy/$INST_NAME/url.txt" ]; then
+    if [ -f "$CLIENT_DIR/url.txt" ]; then
         yellow "分享链接:"
-        red "$(cat /root/hy/$INST_NAME/url.txt)"
+        red "$(cat $CLIENT_DIR/url.txt)"
     fi
     green "======================================================================================"
     read -n 1 -s -r -p "按任意键返回菜单..."
 }
-
 change_port() {
+    set_instance_vars $1
     read -rp "请输入新的端口号: " new_port
     if [[ ! $new_port =~ ^[0-9]+$ ]] || [[ $new_port -lt 1 ]] || [[ $new_port -gt 65535 ]]; then
-        red "端口号无效，请输入1-65535之间的数字。"
+        red "端口号无效"
         sleep 2
-        instance_control_menu
+        instance_control_menu $1
         return
     fi
-
-    if [ -f /etc/hysteria/$INST_NAME/config.yaml ]; then sed -i "s/^listen: :[0-9]\+/listen: :$new_port/" /etc/hysteria/$INST_NAME/config.yaml; fi
-    if [ -f /root/hy/$INST_NAME/hy-client.yaml ]; then sed -i "s/^server: \(.*\):[0-9]\+/server: \1:$new_port/" /root/hy/$INST_NAME/hy-client.yaml; fi
-    if [ -f /root/hy/$INST_NAME/hy-client.json ]; then sed -i "s/\(\"server\": \".*:\)[0-9]\+\(\"\)/\1$new_port\2/" /root/hy/$INST_NAME/hy-client.json; fi
-    if [ -f /root/hy/$INST_NAME/url.txt ]; then sed -i "s/\(@.*:\)[0-9]\+\//\1$new_port\//" /root/hy/$INST_NAME/url.txt; fi
-
-    echo -e "${YELLOW}正在重启该实例服务以应用新端口...${PLAIN}"
-    systemctl restart hysteria-server-$INST_NAME
-    
-    if [[ -n $(systemctl status hysteria-server-$INST_NAME 2>/dev/null | grep -w active) ]]; then
-        green "配置文件端口已修改为: $new_port，服务已自动重启并生效！"
+    if [ -f $CONF_DIR/config.yaml ]; then sed -i "s/^listen: :[0-9]\+/listen: :$new_port/" $CONF_DIR/config.yaml; fi
+    if [ -f $CLIENT_DIR/hy-client.yaml ]; then sed -i "s/^server: \(.*\):[0-9]\+/server: \1:$new_port/" $CLIENT_DIR/hy-client.yaml; fi
+    if [ -f $CLIENT_DIR/hy-client.json ]; then sed -i "s/\(\"server\": \".*:\)[0-9]\+\(\"\)/\1$new_port\2/" $CLIENT_DIR/hy-client.json; fi
+    if [ -f $CLIENT_DIR/url.txt ]; then sed -i "s/\(@.*:\)[0-9]\+\//\1$new_port\//" $CLIENT_DIR/url.txt; fi
+    echo -e "${YELLOW}正在重启服务以应用新端口...${PLAIN}"
+    systemctl restart ${SVC_NAME}
+    if [[ -n $(systemctl status ${SVC_NAME} 2>/dev/null | grep -w active) ]]; then
+        green "端口已修改为 $new_port，服务已自动重启！"
     else
-        red "端口已修改为: $new_port，但服务重启失败，请检查端口是否被其他程序占用！"
+        red "服务重启失败，请检查端口是否被占用！"
     fi
-    
     sleep 2
-    instance_control_menu
+    instance_control_menu $1
 }
-
 instance_control_menu() {
+    set_instance_vars $1
     clear
     echo "#############################################################"
-    echo -e "#               ${GREEN}实例独立管理菜单: $INST_NAME${PLAIN}               #"
+    echo -e "#               ${GREEN}独立管理菜单: $INST_NAME${PLAIN}                   #"
     echo "#############################################################"
     echo -e " ${GREEN}1.${PLAIN} 启动该实例"
     echo -e " ${GREEN}2.${PLAIN} 停止该实例"
@@ -328,62 +276,40 @@ instance_control_menu() {
     echo -e " ${GREEN}4.${PLAIN} 显示配置及分享链接"
     echo -e " ${GREEN}5.${PLAIN} 修改端口"
     echo -e " ${RED}6.${PLAIN} 卸载该实例"
-    echo -e " ${GREEN}0.${PLAIN} 返回实例列表"
+    echo -e " ${GREEN}0.${PLAIN} 返回主菜单"
     read -rp "请输入选项 [0-6]: " action
     case $action in
-        1) start_hy2; sleep 2; instance_control_menu ;;
-        2) stop_hy2; sleep 2; instance_control_menu ;;
-        3) restart_hy2; sleep 2; instance_control_menu ;;
-        4) show_config; instance_control_menu ;;
-        5) change_port ;;
-        6) uninstall_hy2 ;;
-        0) select_instance_menu ;;
-        *) instance_control_menu ;;
+        1) start_hy2 $1; sleep 2; instance_control_menu $1 ;;
+        2) stop_hy2 $1; sleep 2; instance_control_menu $1 ;;
+        3) restart_hy2 $1; sleep 2; instance_control_menu $1 ;;
+        4) show_config $1; instance_control_menu $1 ;;
+        5) change_port $1 ;;
+        6) uninstall_hy2 $1; menu ;;
+        0) menu ;;
+        *) instance_control_menu $1 ;;
     esac
 }
-
-select_instance_menu() {
-    clear
-    local instances=($(ls -d /etc/hysteria/*/ 2>/dev/null | awk -F'/' '{print $4}'))
-    if [[ ${#instances[@]} -eq 0 ]]; then
-        red "未发现已安装的实例！"
-        sleep 2
-        menu
-        return
-    fi
-
-    echo "#############################################################"
-    echo -e "#                   ${GREEN}选择要管理的实例${PLAIN}                      #"
-    echo "#############################################################"
-    for i in "${!instances[@]}"; do echo -e " ${GREEN}$((i+1)).${PLAIN} ${instances[$i]}"; done
-    echo -e " ${GREEN}0.${PLAIN} 返回主菜单"
-    
-    read -rp "请输入选项: " choice
-    if [[ "$choice" == "0" ]]; then menu; return; fi
-    
-    if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le ${#instances[@]} ]]; then
-        INST_NAME="${instances[$((choice-1))]}"
-        instance_control_menu
-    else
-        select_instance_menu
-    fi
-}
-
 menu() {
     clear
     echo "#############################################################"
-    echo -e "#                 ${GREEN}Hysteria 2 多实例配置脚本${PLAIN}                 #"
+    echo -e "#                 ${GREEN}Hysteria 2 双实例管理脚本${PLAIN}                 #"
     echo "#############################################################"
-    echo -e " ${GREEN}1.${PLAIN} 安装新的 Hysteria 2 实例"
-    echo -e " ${GREEN}2.${PLAIN} 管理已有实例 (进入独立控制菜单)"
+    echo -e " ${YELLOW}--- 实例 1 (默认) ---${PLAIN}"
+    echo -e " ${GREEN}1.${PLAIN} 安装 实例1"
+    echo -e " ${GREEN}2.${PLAIN} 管理 实例1 (启停/配置/端口/卸载)"
+    echo -e " ${YELLOW}--- 实例 2 ---${PLAIN}"
+    echo -e " ${GREEN}3.${PLAIN} 安装 实例2"
+    echo -e " ${GREEN}4.${PLAIN} 管理 实例2 (启停/配置/端口/卸载)"
+    echo "-------------------------------------------------------------"
     echo -e " ${GREEN}0.${PLAIN} 退出"
-    read -rp "请输入选项 [0-2]: " menuInput
+    read -rp "请输入选项 [0-4]: " menuInput
     case $menuInput in
-        1) install_hy2 ;;
-        2) select_instance_menu ;;
+        1) install_hy2 1 ;;
+        2) if [[ -d "/etc/hysteria" ]]; then instance_control_menu 1; else red "实例1未安装"; sleep 2; menu; fi ;;
+        3) install_hy2 2 ;;
+        4) if [[ -d "/etc/hysteria2" ]]; then instance_control_menu 2; else red "实例2未安装"; sleep 2; menu; fi ;;
         0) exit 0 ;;
         *) menu ;;
     esac
 }
-
 menu
