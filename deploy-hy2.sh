@@ -13,8 +13,8 @@ show_menu() {
     echo "请选择操作："
     echo "  1) 安装后端服务"
     echo "  2) 修改 API Key"
-    echo "  3) 修改 Hysteria2 配置"
-    echo "  4) 修改 Xray 配置"
+    echo "  3) 修改 Hysteria2 密码"
+    echo "  4) 修改 Xray UUID"
     echo "  5) 查看当前配置"
     echo "  6) 卸载后端服务"
     echo "  7) 退出"
@@ -25,8 +25,8 @@ show_menu() {
     case "$choice" in
         1) install_backend ;;
         2) change_api_key ;;
-        3) change_hysteria_config ;;
-        4) change_xray_config ;;
+        3) change_hysteria_password ;;
+        4) change_xray_uuid ;;
         5) show_config ;;
         6) uninstall_backend ;;
         7) echo "退出"; exit 0 ;;
@@ -89,10 +89,10 @@ change_api_key() {
     show_menu
 }
 
-change_hysteria_config() {
+change_hysteria_password() {
     clear
     echo "========================================="
-    echo "  修改 Hysteria2 配置"
+    echo "  修改 Hysteria2 密码"
     echo "========================================="
     echo ""
     
@@ -104,131 +104,58 @@ change_hysteria_config() {
         return
     fi
     
-    # 获取当前 Hysteria2 配置
-    CURRENT_PORT=$(grep "^HYSTERIA_PORT=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
-    CURRENT_PASSWORD=$(grep "^HYSTERIA_PASSWORD=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
-    CURRENT_MASQUERADE=$(grep "^HYSTERIA_MASQUERADE_HOST=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
-    
-    echo "当前 Hysteria2 配置："
-    echo "  1) Hysteria2 端口: $CURRENT_PORT"
-    echo "  2) Hysteria2 密码: $CURRENT_PASSWORD"
-    echo "  3) 伪装域名:       $CURRENT_MASQUERADE"
-    echo "  4) 返回主菜单"
+    echo "当前 Hysteria2 密码:"
+    OLD_PASSWORD=$(grep "^HYSTERIA_PASSWORD=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
+    echo "$OLD_PASSWORD"
     echo ""
-    echo -n "请选择要修改的项 [1-4]: "
-    read -r config_choice
+    echo -n "请输入新的 Hysteria2 密码 (直接回车生成随机 UUID): "
+    read -r NEW_PASSWORD
     
-    case "$config_choice" in
-        1)
-            echo ""
-            echo -n "请输入新的 Hysteria2 端口 (1-65535): "
-            read -r NEW_PORT
-            if [[ ! "$NEW_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_PORT" -lt 1 ] || [ "$NEW_PORT" -gt 65535 ]; then
-                echo "✗ 无效端口"
-            else
-                echo -n "确认修改 Hysteria2 端口为 $NEW_PORT ？(y/n): "
-                read -r confirm
-                if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-                    sed -i "s/^HYSTERIA_PORT=.*/HYSTERIA_PORT=$NEW_PORT/" $PROJECT_DIR/backend/.env
-                    systemctl restart pi-network-backend
-                    echo "✓ Hysteria2 端口已更新并重启后端服务"
-                    
-                    # 自动修改本地 Hysteria2 配置文件并重启服务
-                    if [ -f /etc/hysteria/config.yaml ]; then
-                        sed -i "s/^listen: :[0-9]*/listen: :$NEW_PORT/" /etc/hysteria/config.yaml
-                        if systemctl is-active --quiet hysteria-server 2>/dev/null; then
-                            systemctl restart hysteria-server
-                            echo "✓ 本地 hysteria-server 服务已自动重启"
-                        fi
-                    fi
-                else
-                    echo "已取消"
-                fi
-            fi
-            ;;
-        2)
-            echo ""
-            echo -n "请输入新的 Hysteria2 密码 (直接回车生成随机 UUID): "
-            read -r NEW_PASSWORD
-            if [ -z "$NEW_PASSWORD" ]; then
-                if command -v uuidgen &> /dev/null; then
-                    NEW_PASSWORD=$(uuidgen)
-                elif [ -f /proc/sys/kernel/random/uuid ]; then
-                    NEW_PASSWORD=$(cat /proc/sys/kernel/random/uuid)
-                else
-                    hex=$(openssl rand -hex 16)
-                    NEW_PASSWORD="${hex:0:8}-${hex:8:4}-${hex:12:4}-${hex:16:4}-${hex:20:12}"
-                fi
-                echo "已生成随机 UUID 格式密码: $NEW_PASSWORD"
-            fi
-            
-            echo -n "确认修改 Hysteria2 密码？(y/n): "
-            read -r confirm
-            if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-                sed -i "s/^HYSTERIA_PASSWORD=.*/HYSTERIA_PASSWORD=$NEW_PASSWORD/" $PROJECT_DIR/backend/.env
-                echo "$NEW_PASSWORD" > /root/pi-network-hysteria-password.txt
-                systemctl restart pi-network-backend
-                echo "✓ Hysteria2 密码已更新并重启后端服务"
-                echo "✓ 密码已备份至 /root/pi-network-hysteria-password.txt"
-                
-                # 自动修改本地 Hysteria2 配置文件并重启服务
-                if [ -f /etc/hysteria/config.yaml ]; then
-                    sed -i "s/^  password: .*/  password: $NEW_PASSWORD/" /etc/hysteria/config.yaml
-                    if systemctl is-active --quiet hysteria-server 2>/dev/null; then
-                        systemctl restart hysteria-server
-                        echo "✓ 本地 hysteria-server 服务已自动重启"
-                    fi
-                fi
-            else
-                echo "已取消"
-            fi
-            ;;
-        3)
-            echo ""
-            echo -n "请输入新的 Hysteria2 伪装域名 (如 www.bing.com): "
-            read -r NEW_MASQUERADE
-            if [ -z "$NEW_MASQUERADE" ]; then
-                echo "✗ 域名不能为空"
-            else
-                echo -n "确认修改 Hysteria2 伪装域名为 $NEW_MASQUERADE ？(y/n): "
-                read -r confirm
-                if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-                    sed -i "s/^HYSTERIA_MASQUERADE_HOST=.*/HYSTERIA_MASQUERADE_HOST=$NEW_MASQUERADE/" $PROJECT_DIR/backend/.env
-                    systemctl restart pi-network-backend
-                    echo "✓ 伪装域名已更新并重启后端服务"
-                    
-                    # 自动修改本地 Hysteria2 配置文件并重启服务
-                    if [ -f /etc/hysteria/config.yaml ]; then
-                        sed -i "s|url: https://.*|url: https://$NEW_MASQUERADE|" /etc/hysteria/config.yaml
-                        if systemctl is-active --quiet hysteria-server 2>/dev/null; then
-                            systemctl restart hysteria-server
-                            echo "✓ 本地 hysteria-server 服务已自动重启"
-                        fi
-                    fi
-                else
-                    echo "已取消"
-                fi
-            fi
-            ;;
-        4)
-            show_menu
-            return
-            ;;
-        *)
-            echo "无效选项"
-            ;;
-    esac
+    if [ -z "$NEW_PASSWORD" ]; then
+        if command -v uuidgen &> /dev/null; then
+            NEW_PASSWORD=$(uuidgen)
+        elif [ -f /proc/sys/kernel/random/uuid ]; then
+            NEW_PASSWORD=$(cat /proc/sys/kernel/random/uuid)
+        else
+            hex=$(openssl rand -hex 16)
+            NEW_PASSWORD="${hex:0:8}-${hex:8:4}-${hex:12:4}-${hex:16:4}-${hex:20:12}"
+        fi
+        echo "已生成随机 UUID 格式密码: $NEW_PASSWORD"
+    fi
+    
+    echo ""
+    echo -n "确认修改 Hysteria2 密码？(y/n): "
+    read -r confirm
+    
+    if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+        sed -i "s/^HYSTERIA_PASSWORD=.*/HYSTERIA_PASSWORD=$NEW_PASSWORD/" $PROJECT_DIR/backend/.env
+        echo "$NEW_PASSWORD" > /root/pi-network-hysteria-password.txt
+        
+        systemctl restart pi-network-backend
+        
+        echo ""
+        echo "✓ Hysteria2 密码已更新"
+        echo "✓ 后端服务已重启"
+        echo "✓ 密码已保存到: /root/pi-network-hysteria-password.txt"
+        echo ""
+        echo "新的 Hysteria2 密码: $NEW_PASSWORD"
+        echo ""
+        echo "注意: 修改密码后，需要重新部署客户端配置才能生效"
+        echo "客户端需要重新运行安装脚本或更新配置文件"
+    else
+        echo "已取消"
+    fi
     
     echo ""
     echo -n "按回车键继续..."
     read
-    change_hysteria_config
+    show_menu
 }
 
-change_xray_config() {
+change_xray_uuid() {
     clear
     echo "========================================="
-    echo "  修改 Xray 配置"
+    echo "  修改 Xray UUID"
     echo "========================================="
     echo ""
     
@@ -240,207 +167,52 @@ change_xray_config() {
         return
     fi
     
-    # 获取当前 Xray 配置
-    CURRENT_UUID=$(grep "^XRAY_UUID=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
-    CURRENT_PORT=$(grep "^XRAY_PORT=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
-    CURRENT_SNI=$(grep "^XRAY_SNI=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
-    CURRENT_FRP_PORT=$(grep "^XRAY_FRP_PORT=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
-    CURRENT_FRP_TOKEN=$(grep "^XRAY_FRP_TOKEN=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
-    CURRENT_VERSION=$(grep "^XRAY_VERSION=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
-    
-    echo "当前 Xray 配置："
-    echo "  1) Xray UUID: $CURRENT_UUID"
-    echo "  2) Xray 端口: $CURRENT_PORT"
-    echo "  3) Xray SNI:  $CURRENT_SNI"
-    echo "  4) FRPS 端口: $CURRENT_FRP_PORT"
-    echo "  5) FRPS 密钥: $CURRENT_FRP_TOKEN"
-    echo "  6) Xray 版本: $CURRENT_VERSION"
-    echo "  7) 返回主菜单"
+    echo "当前 Xray UUID:"
+    OLD_UUID=$(grep "^XRAY_UUID=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
+    echo "$OLD_UUID"
     echo ""
-    echo -n "请选择要修改的项 [1-7]: "
-    read -r config_choice
+    echo -n "请输入新的 Xray UUID (直接回车生成随机 UUID): "
+    read -r NEW_UUID
     
-    case "$config_choice" in
-        1)
-            echo ""
-            echo -n "请输入新的 Xray UUID (直接回车生成随机 UUID): "
-            read -r NEW_UUID
-            if [ -z "$NEW_UUID" ]; then
-                if command -v uuidgen &> /dev/null; then
-                    NEW_UUID=$(uuidgen)
-                elif [ -f /proc/sys/kernel/random/uuid ]; then
-                    NEW_UUID=$(cat /proc/sys/kernel/random/uuid)
-                else
-                    hex=$(openssl rand -hex 16)
-                    NEW_UUID="${hex:0:8}-${hex:8:4}-${hex:12:4}-${hex:16:4}-${hex:20:12}"
-                fi
-                echo "已生成随机 UUID: $NEW_UUID"
-            fi
-            
-            echo -n "确认修改 Xray UUID？(y/n): "
-            read -r confirm
-            if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-                sed -i "s/^XRAY_UUID=.*/XRAY_UUID=$NEW_UUID/" $PROJECT_DIR/backend/.env
-                echo "$NEW_UUID" > /root/pi-network-xray-uuid.txt
-                systemctl restart pi-network-backend
-                echo "✓ Xray UUID 已更新并重启后端服务"
-                echo "✓ UUID 已备份至 /root/pi-network-xray-uuid.txt"
-                
-                # 自动修改本地 Xray 配置文件并重启服务
-                if [ -f /usr/local/etc/xray/config.json ]; then
-                    sed -i "s/\"id\": \"[^\"]*\"/\"id\": \"$NEW_UUID\"/" /usr/local/etc/xray/config.json
-                    if systemctl is-active --quiet xray 2>/dev/null; then
-                        systemctl restart xray
-                        echo "✓ 本地 xray 服务已自动重启"
-                    fi
-                fi
-            else
-                echo "已取消"
-            fi
-            ;;
-        2)
-            echo ""
-            echo -n "请输入新的 Xray 端口 (1-65535): "
-            read -r NEW_PORT
-            if [[ ! "$NEW_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_PORT" -lt 1 ] || [ "$NEW_PORT" -gt 65535 ]; then
-                echo "✗ 无效端口"
-            else
-                echo -n "确认修改 Xray 端口为 $NEW_PORT ？(y/n): "
-                read -r confirm
-                if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-                    sed -i "s/^XRAY_PORT=.*/XRAY_PORT=$NEW_PORT/" $PROJECT_DIR/backend/.env
-                    systemctl restart pi-network-backend
-                    echo "✓ Xray 端口已更新并重启后端服务"
-                    
-                    # 自动修改本地 Xray 配置文件并重启服务
-                    if [ -f /usr/local/etc/xray/config.json ]; then
-                        CURRENT_SNI=$(grep "^XRAY_SNI=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
-                        sed -i "s/\"port\": [0-9]*/\"port\": $NEW_PORT/" /usr/local/etc/xray/config.json
-                        sed -i "s/\"dest\": \"[^\"]*:[0-9]*\"/\"dest\": \"$CURRENT_SNI:$NEW_PORT\"/" /usr/local/etc/xray/config.json
-                        if systemctl is-active --quiet xray 2>/dev/null; then
-                            systemctl restart xray
-                            echo "✓ 本地 xray 服务已自动重启"
-                        fi
-                    fi
-                else
-                    echo "已取消"
-                fi
-            fi
-            ;;
-        3)
-            echo ""
-            echo -n "请输入新的 Xray SNI (域名，如 dash.cloudflare.com): "
-            read -r NEW_SNI
-            if [ -z "$NEW_SNI" ]; then
-                echo "✗ 域名不能为空"
-            else
-                echo -n "确认修改 Xray SNI 为 $NEW_SNI ？(y/n): "
-                read -r confirm
-                if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-                    sed -i "s/^XRAY_SNI=.*/XRAY_SNI=$NEW_SNI/" $PROJECT_DIR/backend/.env
-                    systemctl restart pi-network-backend
-                    echo "✓ Xray SNI 已更新并重启后端服务"
-                    
-                    # 自动修改本地 Xray 配置文件并重启服务
-                    if [ -f /usr/local/etc/xray/config.json ]; then
-                        CURRENT_PORT=$(grep "^XRAY_PORT=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
-                        sed -i "s/\"dest\": \"[^\"]*:[0-9]*\"/\"dest\": \"$NEW_SNI:$CURRENT_PORT\"/" /usr/local/etc/xray/config.json
-                        sed -i "s/\"serverNames\": \[[[:space:]]*\"[^\"]*\"[[:space:]]*\]/\"serverNames\": [ \"$NEW_SNI\" ]/" /usr/local/etc/xray/config.json
-                        if systemctl is-active --quiet xray 2>/dev/null; then
-                            systemctl restart xray
-                            echo "✓ 本地 xray 服务已自动重启"
-                        fi
-                    fi
-                else
-                    echo "已取消"
-                fi
-            fi
-            ;;
-        4)
-            echo ""
-            echo -n "请输入新的 FRPS 端口 (1-65535): "
-            read -r NEW_FRP_PORT
-            if [[ ! "$NEW_FRP_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_FRP_PORT" -lt 1 ] || [ "$NEW_FRP_PORT" -gt 65535 ]; then
-                echo "✗ 无效端口"
-            else
-                echo -n "确认修改 FRPS 端口为 $NEW_FRP_PORT ？(y/n): "
-                read -r confirm
-                if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-                    sed -i "s/^XRAY_FRP_PORT=.*/XRAY_FRP_PORT=$NEW_FRP_PORT/" $PROJECT_DIR/backend/.env
-                    systemctl restart pi-network-backend
-                    echo "✓ FRPS 端口已更新并重启后端服务"
-                    
-                    # 自动修改本地 FRPS 配置文件并重启服务
-                    if [ -f /etc/frp/frps.toml ]; then
-                        sed -i "s/^bindPort = .*/bindPort = $NEW_FRP_PORT/" /etc/frp/frps.toml
-                        if systemctl is-active --quiet frps 2>/dev/null; then
-                            systemctl restart frps
-                            echo "✓ 本地 frps 服务已自动重启"
-                        fi
-                    fi
-                else
-                    echo "已取消"
-                fi
-            fi
-            ;;
-        5)
-            echo ""
-            echo -n "请输入新的 FRPS 密钥: "
-            read -r NEW_FRP_TOKEN
-            if [ -z "$NEW_FRP_TOKEN" ]; then
-                echo "✗ 密钥不能为空"
-            else
-                echo -n "确认修改 FRPS 密钥？(y/n): "
-                read -r confirm
-                if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-                    sed -i "s/^XRAY_FRP_TOKEN=.*/XRAY_FRP_TOKEN=$NEW_FRP_TOKEN/" $PROJECT_DIR/backend/.env
-                    systemctl restart pi-network-backend
-                    echo "✓ FRPS 密钥已更新并重启后端服务"
-                    
-                    # 自动修改本地 FRPS 配置文件并重启服务
-                    if [ -f /etc/frp/frps.toml ]; then
-                        sed -i "s/^auth.token = .*/auth.token = \"$NEW_FRP_TOKEN\"/" /etc/frp/frps.toml
-                        if systemctl is-active --quiet frps 2>/dev/null; then
-                            systemctl restart frps
-                            echo "✓ 本地 frps 服务已自动重启"
-                        fi
-                    fi
-                else
-                    echo "已取消"
-                fi
-            fi
-            ;;
-        6)
-            echo ""
-            echo -n "请输入新的 Xray 版本号 (如 v25.9.11): "
-            read -r NEW_VERSION
-            if [ -z "$NEW_VERSION" ]; then
-                echo "✗ 版本号不能为空"
-            else
-                echo -n "确认修改 Xray 版本为 $NEW_VERSION ？(y/n): "
-                read -r confirm
-                if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-                    sed -i "s/^XRAY_VERSION=.*/XRAY_VERSION=$NEW_VERSION/" $PROJECT_DIR/backend/.env
-                    systemctl restart pi-network-backend
-                    echo "✓ Xray 版本已更新并重启后端服务"
-                else
-                    echo "已取消"
-                fi
-            fi
-            ;;
-        7)
-            show_menu
-            return
-            ;;
-        *)
-            echo "无效选项"
-            ;;
-    esac
+    if [ -z "$NEW_UUID" ]; then
+        if command -v uuidgen &> /dev/null; then
+            NEW_UUID=$(uuidgen)
+        elif [ -f /proc/sys/kernel/random/uuid ]; then
+            NEW_UUID=$(cat /proc/sys/kernel/random/uuid)
+        else
+            hex=$(openssl rand -hex 16)
+            NEW_UUID="${hex:0:8}-${hex:8:4}-${hex:12:4}-${hex:16:4}-${hex:20:12}"
+        fi
+        echo "已生成随机 UUID: $NEW_UUID"
+    fi
+    
+    echo ""
+    echo -n "确认修改 Xray UUID？(y/n): "
+    read -r confirm
+    
+    if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+        sed -i "s/^XRAY_UUID=.*/XRAY_UUID=$NEW_UUID/" $PROJECT_DIR/backend/.env
+        echo "$NEW_UUID" > /root/pi-network-xray-uuid.txt
+        
+        systemctl restart pi-network-backend
+        
+        echo ""
+        echo "✓ Xray UUID 已更新"
+        echo "✓ 后端服务已重启"
+        echo "✓ UUID 已保存到: /root/pi-network-xray-uuid.txt"
+        echo ""
+        echo "新的 Xray UUID: $NEW_UUID"
+        echo ""
+        echo "注意: 修改 UUID 后，需要重新部署客户端配置才能生效"
+        echo "客户端需要重新运行安装脚本或更新配置文件"
+    else
+        echo "已取消"
+    fi
     
     echo ""
     echo -n "按回车键继续..."
     read
-    change_xray_config
+    show_menu
 }
 
 uninstall_backend() {
