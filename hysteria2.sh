@@ -56,7 +56,7 @@ set_instance_vars() {
         SVC_NAME="hysteria-server2"
         CONF_DIR="/etc/hysteria2"
         CLIENT_DIR="/root/hy2"
-        DEF_PORT=7007
+        DEF_PORT=7050
         INST_NAME="实例2"
     fi
 }
