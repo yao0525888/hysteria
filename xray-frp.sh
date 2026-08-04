@@ -77,12 +77,12 @@ uninstall_frps() {
 }
 install_frps() {
     log_step "1" "2" "安装FRPS服务..."
-    sudo sh -c 'cat <<EOF >> /etc/sysctl.conf 2>&1
+sudo sh -c 'cat <<EOF >> /etc/sysctl.conf
 net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.lo.disable_ipv6 = 1
 EOF
-sysctl -p'
+sysctl -p >/dev/null 2>&1'
     uninstall_frps
     local FRP_NAME="frp_${FRP_VERSION#v}_linux_amd64"
     local FRP_FILE="${FRP_NAME}.tar.gz"
