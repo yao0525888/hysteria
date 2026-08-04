@@ -77,7 +77,7 @@ uninstall_frps() {
 }
 install_frps() {
     log_step "1" "2" "安装FRPS服务..."
-    sudo sh -c 'cat <<EOF >> /etc/sysctl.conf
+    sudo sh -c 'cat <<EOF >> /etc/sysctl.conf 2>&1
 net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.lo.disable_ipv6 = 1
