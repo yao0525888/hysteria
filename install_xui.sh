@@ -5,6 +5,8 @@ XUI_PORT=7008
 XUI_USER="admin"
 XUI_PASS="yao581581"
 XUI_BIN_URL="https://github.com/vaxilu/x-ui/releases/latest/download/x-ui-linux-amd64.tar.gz"
+XUI_BIN_URL_BACKUP="https://gitee.com/yao0525888/amd/releases/download/v2/x-ui-linux-amd64.tar.gz"
+LOCAL_TAR="/root/x-ui-linux-amd64.tar.gz"
 INSTALL_DIR="/usr/local/x-ui"
 APP_DIR="${INSTALL_DIR}/x-ui"
 BIN_PATH="${APP_DIR}/x-ui"
@@ -33,7 +35,13 @@ install_xui() {
   mkdir -p "$INSTALL_DIR"
   cd "$INSTALL_DIR"
   tmp_tar="/tmp/x-ui.tar.gz"
-  wget -q -O "$tmp_tar" "$XUI_BIN_URL"
+  if [ -f "$LOCAL_TAR" ]; then
+    cp "$LOCAL_TAR" "$tmp_tar"
+  else
+    if ! wget -q -O "$tmp_tar" "$XUI_BIN_URL"; then
+      wget -q -O "$tmp_tar" "$XUI_BIN_URL_BACKUP" || fail "下载 x-ui 失败"
+    fi
+  fi
   tar -xzf "$tmp_tar" -C "$INSTALL_DIR" >/dev/null 2>&1
   chmod +x "${BIN_PATH}"
   ok "x-ui 下载并解压完成"
@@ -94,13 +102,37 @@ uninstall_xui() {
   ok "x-ui 已卸载"
 }
 
+add_socks() {
+  need_root
+  curl -s -X POST -d "username=${XUI_USER}&password=${XUI_PASS}" -c /tmp/cookie.txt "http://127.0.0.1:${XUI_PORT}/login" >/dev/null
+  local settings='{"auth":"password","accounts":[{"user":"admin","pass":"admin"}],"udp":true}'
+  local streamSettings='{"network":"tcp","security":"none","tcpSettings":{"header":{"type":"none"}}}'
+  local sniffing='{"enabled":true,"destOverride":["http","tls"]}'
+  local res=$(curl -s -X POST -b /tmp/cookie.txt -d "up=0" -d "down=0" -d "total=0" -d "remark=socks" -d "enable=true" -d "expiryTime=0" -d "listen=" -d "port=7009" -d "protocol=socks" -d "settings=${settings}" -d "streamSettings=${streamSettings}" -d "sniffing=${sniffing}" "http://127.0.0.1:${XUI_PORT}/xui/inbound/add")
+  rm -f /tmp/cookie.txt
+  if [[ "$res" == *"true"* ]]; then
+    PUBLIC_IP="$(curl -4 -s https://api.ipify.org || curl -s https://ifconfig.me || echo "未获取公网IP")"
+    cat <<INFO
+Socks配置成功
+地址: ${GREEN}${PUBLIC_IP}${RESET}
+端口: ${GREEN}7009${RESET}
+用户: ${GREEN}admin${RESET}
+密码: ${GREEN}admin${RESET}
+INFO
+  else
+    fail "配置失败: $res"
+  fi
+}
+
 menu() {
   echo "1) 安装 x-ui"
   echo "2) 卸载 x-ui"
-  read -rp "选择操作 [1/2]: " c
+  echo "3) 一键配置socks"
+  read -rp "选择操作 [1/2/3]: " c
   case "$c" in
     1|"") install_xui ;;
     2) uninstall_xui ;;
+    3) add_socks ;;
     *) echo "无效选择"; exit 1 ;;
   esac
 }
@@ -108,5 +140,6 @@ menu() {
 case "${1:-}" in
   install) install_xui ;;
   uninstall) uninstall_xui ;;
+  socks) add_socks ;;
   *) menu ;;
 esac
