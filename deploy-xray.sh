@@ -12,7 +12,7 @@ show_menu() {
     echo ""
     echo "请选择操作："
     echo "  1) 安装后端服务"
-    echo "  2) 修改 API Key"
+    echo "  2) API Key 管理 (多 API / 次数管理)"
     echo "  3) 修改 Hysteria2 密码"
     echo "  4) 修改 Xray UUID"
     echo "  5) 查看当前配置"
@@ -24,7 +24,7 @@ show_menu() {
     
     case "$choice" in
         1) install_backend ;;
-        2) change_api_key ;;
+        2) manage_api_keys ;;
         3) change_hysteria_password ;;
         4) change_xray_uuid ;;
         5) show_config ;;
@@ -34,59 +34,359 @@ show_menu() {
     esac
 }
 
-change_api_key() {
+manage_api_keys() {
     clear
     echo "========================================="
-    echo "  修改 API Key"
+    echo "  API Key 管理 (多 API / 按次扣减)"
     echo "========================================="
     echo ""
     
-    if [ ! -f "$PROJECT_DIR/backend/.env" ]; then
+    if [ ! -f "$PROJECT_DIR/backend/server.js" ]; then
         echo "✗ 后端服务未安装"
         echo "请先安装后端服务"
-        sleep 3
+        echo ""
+        echo -n "按回车键继续..."
+        read
         show_menu
         return
     fi
-    
-    echo "当前 API Key:"
-    OLD_API_KEY=$(grep "^API_KEY=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
-    echo "$OLD_API_KEY"
+
+    # 显示当前所有 Key 列表
+    node "$PROJECT_DIR/backend/manage_keys.js" list 2>/dev/null || true
+
+    echo "请选择操作："
+    echo "  1) 添加新 API Key (设置次数及备注)"
+    echo "  2) 充值/增加 API Key 次数"
+    echo "  3) 重新设定 API Key 剩余次数"
+    echo "  4) 启用/禁用 API Key"
+    echo "  5) 删除 API Key"
+    echo "  6) 查看指定 API Key 详情与客户端命令"
+    echo "  7) 导出所有 API Key 到文件"
+    echo "  0) 返回主菜单"
     echo ""
-    echo -n "请输入新的 API Key (直接回车生成随机): "
-    read -r NEW_API_KEY
+    echo -n "请输入选项 [0-7]: "
+    read -r sub_choice
+
+    case "$sub_choice" in
+        1) add_api_key ;;
+        2) recharge_api_key ;;
+        3) set_api_key_count ;;
+        4) toggle_api_key ;;
+        5) delete_api_key ;;
+        6) get_api_key_detail ;;
+        7) export_api_keys ;;
+        0) show_menu ;;
+        *) echo "无效选项"; sleep 1; manage_api_keys ;;
+    esac
+}
+
+add_api_key() {
+    clear
+    echo "========================================="
+    echo "  添加新 API Key"
+    echo "========================================="
+    echo ""
     
-    if [ -z "$NEW_API_KEY" ]; then
-        NEW_API_KEY=$(openssl rand -hex 32)
-        echo "已生成随机 API Key: $NEW_API_KEY"
+    echo -n "请输入备注名称 (例如: 客户A / 测试 / 张三，直接回车默认'新用户'): "
+    read -r KEY_NAME
+    if [ -z "$KEY_NAME" ]; then
+        KEY_NAME="新用户"
     fi
-    
+
+    echo -n "请输入可用次数 (直接回车默认 100 次): "
+    read -r KEY_COUNT
+    if [ -z "$KEY_COUNT" ]; then
+        KEY_COUNT=100
+    fi
+
+    if ! [[ "$KEY_COUNT" =~ ^[0-9]+$ ]]; then
+        echo "✗ 错误：可用次数必须为非负整数"
+        echo -n "按回车键继续..."
+        read
+        manage_api_keys
+        return
+    fi
+
+    echo -n "请输入自定义 API Key (直接回车自动生成 64 位随机 Key): "
+    read -r CUSTOM_KEY
+
     echo ""
-    echo -n "确认修改 API Key？(y/n): "
-    read -r confirm
-    
-    if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-        sed -i "s/^API_KEY=.*/API_KEY=$NEW_API_KEY/" $PROJECT_DIR/backend/.env
-        echo "$NEW_API_KEY" > /root/pi-network-api-key.txt
-        
-        systemctl restart pi-network-backend
-        
-        echo ""
-        echo "✓ API Key 已更新"
-        echo "✓ 后端服务已重启"
-        echo "✓ API Key 已保存到: /root/pi-network-api-key.txt"
-        echo ""
-        echo "新的 API Key: $NEW_API_KEY"
-        echo ""
-        echo "请更新客户端脚本中的 API_KEY 变量"
+    cd "$PROJECT_DIR/backend"
+    if [ -n "$CUSTOM_KEY" ]; then
+        node manage_keys.js add "$KEY_COUNT" "$KEY_NAME" "$CUSTOM_KEY"
     else
-        echo "已取消"
+        node manage_keys.js add "$KEY_COUNT" "$KEY_NAME"
     fi
-    
+
     echo ""
     echo -n "按回车键继续..."
     read
-    show_menu
+    manage_api_keys
+}
+
+recharge_api_key() {
+    clear
+    echo "========================================="
+    echo "  充值 / 增加 API Key 次数"
+    echo "========================================="
+    echo ""
+    node "$PROJECT_DIR/backend/manage_keys.js" list 2>/dev/null || true
+
+    echo -n "请输入要充值的 API Key (或输入序号): "
+    read -r TARGET_INPUT
+    
+    if [ -z "$TARGET_INPUT" ]; then
+        echo "已取消"
+        sleep 1
+        manage_api_keys
+        return
+    fi
+
+    TARGET_KEY="$TARGET_INPUT"
+    # 如果用户输入的是纯数字序号，从 json 中查找对应 key
+    if [[ "$TARGET_INPUT" =~ ^[0-9]+$ ]] && [ "$TARGET_INPUT" -gt 0 ]; then
+        RESOLVED_KEY=$(node -e "
+            const { apiKeyManager } = require('$PROJECT_DIR/backend/apiKeyManager');
+            const list = apiKeyManager.getAllKeys();
+            const idx = parseInt('$TARGET_INPUT', 10) - 1;
+            if (list[idx]) console.log(list[idx].key);
+        " 2>/dev/null || echo "")
+        if [ -n "$RESOLVED_KEY" ]; then
+            TARGET_KEY="$RESOLVED_KEY"
+        fi
+    fi
+
+    echo -n "请输入要增加的次数 (例如: 50): "
+    read -r ADD_COUNT
+
+    if ! [[ "$ADD_COUNT" =~ ^[0-9]+$ ]] || [ "$ADD_COUNT" -le 0 ]; then
+        echo "✗ 错误：增加的次数必须为大于 0 的整数"
+        echo -n "按回车键继续..."
+        read
+        manage_api_keys
+        return
+    fi
+
+    echo ""
+    cd "$PROJECT_DIR/backend"
+    node manage_keys.js recharge "$TARGET_KEY" "$ADD_COUNT"
+
+    echo ""
+    echo -n "按回车键继续..."
+    read
+    manage_api_keys
+}
+
+set_api_key_count() {
+    clear
+    echo "========================================="
+    echo "  重新设定 API Key 剩余次数"
+    echo "========================================="
+    echo ""
+    node "$PROJECT_DIR/backend/manage_keys.js" list 2>/dev/null || true
+
+    echo -n "请输入要设定的 API Key (或输入序号): "
+    read -r TARGET_INPUT
+    
+    if [ -z "$TARGET_INPUT" ]; then
+        echo "已取消"
+        sleep 1
+        manage_api_keys
+        return
+    fi
+
+    TARGET_KEY="$TARGET_INPUT"
+    if [[ "$TARGET_INPUT" =~ ^[0-9]+$ ]] && [ "$TARGET_INPUT" -gt 0 ]; then
+        RESOLVED_KEY=$(node -e "
+            const { apiKeyManager } = require('$PROJECT_DIR/backend/apiKeyManager');
+            const list = apiKeyManager.getAllKeys();
+            const idx = parseInt('$TARGET_INPUT', 10) - 1;
+            if (list[idx]) console.log(list[idx].key);
+        " 2>/dev/null || echo "")
+        if [ -n "$RESOLVED_KEY" ]; then
+            TARGET_KEY="$RESOLVED_KEY"
+        fi
+    fi
+
+    echo -n "请输入新的剩余可用次数 (例如: 200): "
+    read -r NEW_COUNT
+
+    if ! [[ "$NEW_COUNT" =~ ^[0-9]+$ ]]; then
+        echo "✗ 错误：次数必须为非负整数"
+        echo -n "按回车键继续..."
+        read
+        manage_api_keys
+        return
+    fi
+
+    echo ""
+    cd "$PROJECT_DIR/backend"
+    node manage_keys.js set-count "$TARGET_KEY" "$NEW_COUNT"
+
+    echo ""
+    echo -n "按回车键继续..."
+    read
+    manage_api_keys
+}
+
+toggle_api_key() {
+    clear
+    echo "========================================="
+    echo "  启用 / 禁用 API Key"
+    echo "========================================="
+    echo ""
+    node "$PROJECT_DIR/backend/manage_keys.js" list 2>/dev/null || true
+
+    echo -n "请输入要切换状态的 API Key (或输入序号): "
+    read -r TARGET_INPUT
+    
+    if [ -z "$TARGET_INPUT" ]; then
+        echo "已取消"
+        sleep 1
+        manage_api_keys
+        return
+    fi
+
+    TARGET_KEY="$TARGET_INPUT"
+    if [[ "$TARGET_INPUT" =~ ^[0-9]+$ ]] && [ "$TARGET_INPUT" -gt 0 ]; then
+        RESOLVED_KEY=$(node -e "
+            const { apiKeyManager } = require('$PROJECT_DIR/backend/apiKeyManager');
+            const list = apiKeyManager.getAllKeys();
+            const idx = parseInt('$TARGET_INPUT', 10) - 1;
+            if (list[idx]) console.log(list[idx].key);
+        " 2>/dev/null || echo "")
+        if [ -n "$RESOLVED_KEY" ]; then
+            TARGET_KEY="$RESOLVED_KEY"
+        fi
+    fi
+
+    echo ""
+    cd "$PROJECT_DIR/backend"
+    node manage_keys.js toggle "$TARGET_KEY"
+
+    echo ""
+    echo -n "按回车键继续..."
+    read
+    manage_api_keys
+}
+
+delete_api_key() {
+    clear
+    echo "========================================="
+    echo "  删除 API Key"
+    echo "========================================="
+    echo ""
+    node "$PROJECT_DIR/backend/manage_keys.js" list 2>/dev/null || true
+
+    echo -n "请输入要删除的 API Key (或输入序号): "
+    read -r TARGET_INPUT
+    
+    if [ -z "$TARGET_INPUT" ]; then
+        echo "已取消"
+        sleep 1
+        manage_api_keys
+        return
+    fi
+
+    TARGET_KEY="$TARGET_INPUT"
+    if [[ "$TARGET_INPUT" =~ ^[0-9]+$ ]] && [ "$TARGET_INPUT" -gt 0 ]; then
+        RESOLVED_KEY=$(node -e "
+            const { apiKeyManager } = require('$PROJECT_DIR/backend/apiKeyManager');
+            const list = apiKeyManager.getAllKeys();
+            const idx = parseInt('$TARGET_INPUT', 10) - 1;
+            if (list[idx]) console.log(list[idx].key);
+        " 2>/dev/null || echo "")
+        if [ -n "$RESOLVED_KEY" ]; then
+            TARGET_KEY="$RESOLVED_KEY"
+        fi
+    fi
+
+    echo ""
+    echo -n "警告：确定要删除该 API Key 吗？此操作不可恢复 (y/n): "
+    read -r confirm
+    if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+        cd "$PROJECT_DIR/backend"
+        node manage_keys.js delete "$TARGET_KEY"
+    else
+        echo "已取消"
+    fi
+
+    echo ""
+    echo -n "按回车键继续..."
+    read
+    manage_api_keys
+}
+
+get_api_key_detail() {
+    clear
+    echo "========================================="
+    echo "  查看 API Key 详情与调用命令"
+    echo "========================================="
+    echo ""
+    node "$PROJECT_DIR/backend/manage_keys.js" list 2>/dev/null || true
+
+    echo -n "请输入要查看的 API Key (或输入序号): "
+    read -r TARGET_INPUT
+    
+    if [ -z "$TARGET_INPUT" ]; then
+        echo "已取消"
+        sleep 1
+        manage_api_keys
+        return
+    fi
+
+    TARGET_KEY="$TARGET_INPUT"
+    if [[ "$TARGET_INPUT" =~ ^[0-9]+$ ]] && [ "$TARGET_INPUT" -gt 0 ]; then
+        RESOLVED_KEY=$(node -e "
+            const { apiKeyManager } = require('$PROJECT_DIR/backend/apiKeyManager');
+            const list = apiKeyManager.getAllKeys();
+            const idx = parseInt('$TARGET_INPUT', 10) - 1;
+            if (list[idx]) console.log(list[idx].key);
+        " 2>/dev/null || echo "")
+        if [ -n "$RESOLVED_KEY" ]; then
+            TARGET_KEY="$RESOLVED_KEY"
+        fi
+    fi
+
+    cd "$PROJECT_DIR/backend"
+    node manage_keys.js get "$TARGET_KEY"
+
+    SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
+    PORT=$(grep "^PORT=" "$PROJECT_DIR/backend/.env" 2>/dev/null | cut -d'=' -f2 || echo "7008")
+    
+    echo "----------------------------------------"
+    echo "客户端调用方式 (任选其一)："
+    echo "1. 命令行环境变量方式："
+    echo "   export API_KEY=\"$TARGET_KEY\""
+    echo "   bash xray2.sh"
+    echo ""
+    echo "2. 直接写入客户端脚本头部："
+    echo "   API_KEY=\"$TARGET_KEY\""
+    echo "----------------------------------------"
+
+    echo ""
+    echo -n "按回车键继续..."
+    read
+    manage_api_keys
+}
+
+export_api_keys() {
+    clear
+    echo "========================================="
+    echo "  导出所有 API Key 到文件"
+    echo "========================================="
+    echo ""
+    EXPORT_FILE="/root/pi-network-all-keys.txt"
+    cd "$PROJECT_DIR/backend"
+    node manage_keys.js export "$EXPORT_FILE"
+
+    echo ""
+    echo "文件内容预览："
+    cat "$EXPORT_FILE"
+    echo ""
+    echo -n "按回车键继续..."
+    read
+    manage_api_keys
 }
 
 change_hysteria_password() {
@@ -240,8 +540,8 @@ uninstall_backend() {
     if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
         echo ""
         echo ">>> 停止服务..."
-        systemctl stop pi-network-backend 2>/dev/null
-        systemctl disable pi-network-backend 2>/dev/null
+        systemctl stop pi-network-backend 2>/dev/null || true
+        systemctl disable pi-network-backend 2>/dev/null || true
         echo "✓ 服务已停止"
         
         echo ""
@@ -260,8 +560,8 @@ uninstall_backend() {
         if command -v ufw &> /dev/null; then
             ufw delete allow 7008/tcp 2>/dev/null && echo "✓ UFW 规则已删除"
         elif command -v firewall-cmd &> /dev/null; then
-            firewall-cmd --permanent --remove-port=7008/tcp 2>/dev/null
-            firewall-cmd --reload 2>/dev/null
+            firewall-cmd --permanent --remove-port=7008/tcp 2>/dev/null || true
+            firewall-cmd --reload 2>/dev/null || true
             echo "✓ firewalld 规则已删除"
         fi
         
@@ -293,7 +593,6 @@ show_config() {
         return
     fi
     
-    API_KEY=$(grep "^API_KEY=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
     PORT=$(grep "^PORT=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
     ENABLE_LIMIT=$(grep "^ENABLE_LIMIT=" $PROJECT_DIR/backend/.env | cut -d'=' -f2)
     
@@ -317,11 +616,16 @@ show_config() {
         echo "  ✗ 已停止"
     fi
     echo ""
-    echo "配置信息:"
+    echo "基础配置:"
     echo "  后端地址: http://${SERVER_IP}:${PORT}"
-    echo "  API Key: $API_KEY"
     echo "  项目目录: $PROJECT_DIR"
     echo "  限速开关: $ENABLE_LIMIT"
+    echo ""
+    echo "API Key 概况 (多 API 支持):"
+    if [ -f "$PROJECT_DIR/backend/manage_keys.js" ]; then
+        node "$PROJECT_DIR/backend/manage_keys.js" list 2>/dev/null || true
+    fi
+    echo "  提示: 可在主菜单选择 [2) API Key 管理] 新增或修改 Key 次数"
     echo ""
     echo "Hysteria 2 配置:"
     echo "  端口: $HYSTERIA_PORT"
@@ -362,8 +666,8 @@ install_backend() {
     echo ">>> 检查并卸载已存在的服务..."
     if systemctl is-active --quiet pi-network-backend 2>/dev/null; then
         echo "发现已安装的后端服务，正在卸载..."
-        systemctl stop pi-network-backend 2>/dev/null
-        systemctl disable pi-network-backend 2>/dev/null
+        systemctl stop pi-network-backend 2>/dev/null || true
+        systemctl disable pi-network-backend 2>/dev/null || true
         rm -f /etc/systemd/system/pi-network-backend.service
         systemctl daemon-reload
         echo "✓ 旧服务已卸载"
@@ -389,7 +693,7 @@ install_backend() {
     cd $TEMP_DIR
 
     if [ -d "/root/pi-network-backend" ]; then
-        echo "发现本地项目文件，正在复制..."
+        echo "发现本地项目文件 /root/pi-network-backend，正在复制..."
         cp -r /root/pi-network-backend pi-network
         if [ $? -eq 0 ]; then
             echo "✓ 本地文件复制完成"
@@ -397,6 +701,11 @@ install_backend() {
             echo "✗ 本地文件复制失败"
             exit 1
         fi
+    elif [ -f "/root/xray-backend.tar.gz" ]; then
+        echo "发现本地安装包 /root/xray-backend.tar.gz，正在解压..."
+        mkdir -p pi-network
+        tar -xzf /root/xray-backend.tar.gz -C pi-network
+        echo "✓ 本地安装包解压完成"
     else
         echo "未发现本地项目文件，正在从 GitHub 下载... (如果失败会自动重试)"
         for i in {1..3}; do
@@ -447,6 +756,9 @@ install_backend() {
     if [ -d "$TEMP_DIR/pi-network/backend" ]; then
         cp -r $TEMP_DIR/pi-network/* $PROJECT_DIR/
         echo "✓ 文件已复制到 $PROJECT_DIR"
+    elif [ -d "$TEMP_DIR/pi-network" ]; then
+        cp -r $TEMP_DIR/pi-network $PROJECT_DIR/backend
+        echo "✓ 文件已复制到 $PROJECT_DIR"
     else
         echo "✗ 找不到项目文件"
         ls -la $TEMP_DIR
@@ -460,7 +772,7 @@ install_backend() {
     npm install --production
 
     if [ ! -f .env ]; then
-        DEFAULT_API_KEY=$(grep "^API_KEY=" env.example | cut -d'=' -f2)
+        DEFAULT_API_KEY=$(grep "^API_KEY=" env.example 2>/dev/null | cut -d'=' -f2 || echo "")
         if [ -z "$DEFAULT_API_KEY" ]; then
             API_KEY=$(openssl rand -hex 32)
         else
@@ -471,19 +783,25 @@ install_backend() {
         sed -i "s/^API_KEY=.*/API_KEY=$API_KEY/" .env
         
         echo "✓ 配置文件已生成"
-        echo ""
-        echo "========================================="
-        echo "  重要！请保存您的 API Key："
-        echo "  $API_KEY"
-        echo "========================================="
-        echo ""
-        
-        echo "API_KEY=$API_KEY" > /root/pi-network-api-key.txt
-        echo "API Key 也已保存到: /root/pi-network-api-key.txt"
     else
         API_KEY=$(grep "^API_KEY=" .env | cut -d'=' -f2)
         echo "✓ 配置文件已存在，跳过"
     fi
+
+    # 初始化 API Key 存储
+    echo ">>> 初始化 API Key 数据存储..."
+    node -e "require('./apiKeyManager');" 2>/dev/null || true
+    echo "API_KEY=$API_KEY" > /root/pi-network-api-key.txt
+    node manage_keys.js export /root/pi-network-all-keys.txt 2>/dev/null || true
+
+    echo ""
+    echo "========================================="
+    echo "  重要！默认 API Key 已生成："
+    echo "  Key:      $API_KEY"
+    echo "  初始可用: 1000 次 (按次扣减)"
+    echo "  管理方式: 执行脚本选择菜单 2) 可管理多 API Key"
+    echo "========================================="
+    echo ""
 
     echo ""
     echo ">>> 步骤 7/8: 创建并启动服务..."
@@ -518,9 +836,9 @@ EOF
     if systemctl is-active --quiet pi-network-backend; then
         echo "✓ 后端服务运行正常"
         
-        response=$(curl -s -H "X-API-Key: $API_KEY" http://localhost:7008/api/status 2>/dev/null)
-        if echo "$response" | grep -q "hysteria2\|xray"; then
-            echo "✓ API 测试成功"
+        response=$(curl -s -H "X-API-Key: $API_KEY" http://localhost:7008/api/status 2>/dev/null || echo "")
+        if echo "$response" | grep -q "hysteria2\|xray\|remaining_count"; then
+            echo "✓ API 鉴权与状态测试成功"
         else
             echo "⚠ API 响应异常，但服务已启动"
         fi
@@ -535,8 +853,8 @@ EOF
     if command -v ufw &> /dev/null; then
         ufw allow 7008/tcp 2>/dev/null && echo "✓ UFW 防火墙已配置"
     elif command -v firewall-cmd &> /dev/null; then
-        firewall-cmd --permanent --add-port=7008/tcp 2>/dev/null
-        firewall-cmd --reload 2>/dev/null
+        firewall-cmd --permanent --add-port=7008/tcp 2>/dev/null || true
+        firewall-cmd --reload 2>/dev/null || true
         echo "✓ firewalld 防火墙已配置"
     fi
 
@@ -553,7 +871,7 @@ EOF
     echo "========================================="
     echo ""
     echo "后端地址: http://${SERVER_IP}:7008"
-    echo "API Key: $API_KEY"
+    echo "默认 API Key: $API_KEY"
     echo ""
     echo "常用命令："
     echo "  查看状态: systemctl status pi-network-backend"
