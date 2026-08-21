@@ -130,6 +130,7 @@ sysctl -p >/dev/null 2>&1'
 }
 install_xray() {
     log_step "2" "2" "安装Xray服务..."
+    uninstall_xray
     ARCH=$(uname -m)
     case $ARCH in
         x86_64) ARCH="64" ;;
@@ -254,7 +255,6 @@ uninstall_xray() {
     rm -f /usr/local/bin/geoip.dat
     rm -f /usr/local/bin/geosite.dat
     systemctl daemon-reload >/dev/null 2>&1
-    log_success "Xray卸载成功"
 }
 modify_xray_port() {
     read -p "请输入新的端口号(1-65535): " NEW_PORT
@@ -335,6 +335,22 @@ show_xray_link() {
     echo -e "\n${YELLOW}>>> 当前Xray Reality分享链接：${NC}"
     echo -e "${GREEN}$LINK${NC}\n"
 }
+check_and_uninstall() {
+    local has_installed=false
+    if [ -f /etc/systemd/system/frps.service ] || [ -d /usr/local/frp ] || [ -d /etc/frp ] || systemctl is-active --quiet frps 2>/dev/null; then
+        has_installed=true
+    fi
+    if [ -f /etc/systemd/system/xray.service ] || [ -f /usr/local/bin/xray ] || [ -d /usr/local/etc/xray ] || systemctl is-active --quiet xray 2>/dev/null; then
+        has_installed=true
+    fi
+
+    if [ "$has_installed" = true ]; then
+        echo -e "${YELLOW}[提示] 检测到已存在安装，正在先卸载旧版本...${NC}"
+        uninstall_frps
+        uninstall_xray
+        log_success "旧版本卸载完成，准备开始全新安装"
+    fi
+}
 show_menu() {
     echo -e "${YELLOW}=== Xray & FRPS 管理脚本 ===${NC}"
     echo -e "${GREEN}1.${NC} 安装 Xray + FRPS"
@@ -352,6 +368,7 @@ main() {
         read -p "请选择操作 [1-6]: " choice
         case $choice in
             1)
+                check_and_uninstall
                 install_dependencies
                 install_frps
                 install_xray
