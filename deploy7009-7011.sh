@@ -21,13 +21,234 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+deploy_api_server_script() {
+    echo "创建/更新API服务器脚本 (多线程并发与原子写入版)..."
+    cat > "$WEB_DIR/api_server.py" <<'APISCRIPT'
+#!/usr/bin/env python3
+
+import json
+import os
+import sys
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import socketserver
+
+try:
+    from http.server import ThreadingHTTPServer
+except ImportError:
+    class ThreadingHTTPServer(socketserver.ThreadingMixIn, HTTPServer):
+        daemon_threads = True
+
+DATA_FILE = '/var/www/html/data.json'
+DATA_FILE1 = '/var/www/html/data1.json'
+SETTINGS_FILE = '/var/www/html/settings.json'
+SETTINGS_FILE1 = '/var/www/html/settings1.json'
+PASSWORD_FILE = '/var/www/html/password.json'
+PASSWORD_FILE1 = '/var/www/html/password1.json'
+
+def read_json_file(filepath, default):
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                if not content:
+                    return default
+                return json.loads(content)
+        except Exception:
+            return default
+    return default
+
+def write_json_file(filepath, data):
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    tmp_path = filepath + '.tmp'
+    with open(tmp_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp_path, filepath)
+
+class APIHandler(BaseHTTPRequestHandler):
+    timeout = 10
+    protocol_version = 'HTTP/1.1'
+
+    def send_json(self, data, status=200):
+        try:
+            body = json.dumps(data, ensure_ascii=False).encode('utf-8')
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+            self.send_header('Connection', 'close')
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception:
+            pass
+
+    def do_OPTIONS(self):
+        self.send_json({}, 200)
+
+    def do_GET(self):
+        clean_path = self.path.split('?')[0]
+        if clean_path == '/api/data':
+            try:
+                self.send_json(read_json_file(DATA_FILE, []))
+            except Exception as e:
+                self.send_json({'error': str(e)}, 500)
+        elif clean_path == '/api/data1':
+            try:
+                self.send_json(read_json_file(DATA_FILE1, []))
+            except Exception as e:
+                self.send_json({'error': str(e)}, 500)
+        elif clean_path == '/api/settings':
+            try:
+                self.send_json(read_json_file(SETTINGS_FILE, {}))
+            except Exception as e:
+                self.send_json({'error': str(e)}, 500)
+        elif clean_path == '/api/settings1':
+            try:
+                self.send_json(read_json_file(SETTINGS_FILE1, {}))
+            except Exception as e:
+                self.send_json({'error': str(e)}, 500)
+        elif clean_path == '/api/password':
+            try:
+                password_data = read_json_file(PASSWORD_FILE, {'password': 'admin', 'version': 0})
+                self.send_json({'password': password_data.get('password', 'admin'), 'version': password_data.get('version', 0)})
+            except Exception as e:
+                self.send_json({'error': str(e)}, 500)
+        elif clean_path == '/api/password1':
+            try:
+                password_data = read_json_file(PASSWORD_FILE1, {'password': 'admin', 'version': 0})
+                self.send_json({'password': password_data.get('password', 'admin'), 'version': password_data.get('version', 0)})
+            except Exception as e:
+                self.send_json({'error': str(e)}, 500)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            if content_length > 0:
+                post_data = json.loads(self.rfile.read(content_length).decode('utf-8'))
+            else:
+                post_data = {}
+            clean_path = self.path.split('?')[0]
+            if clean_path == '/api/data':
+                write_json_file(DATA_FILE, post_data)
+                self.send_json({'success': True})
+            elif clean_path == '/api/data1':
+                write_json_file(DATA_FILE1, post_data)
+                self.send_json({'success': True})
+            elif clean_path == '/api/settings':
+                write_json_file(SETTINGS_FILE, post_data)
+                self.send_json({'success': True})
+            elif clean_path == '/api/settings1':
+                write_json_file(SETTINGS_FILE1, post_data)
+                self.send_json({'success': True})
+            elif clean_path == '/api/password':
+                password_data = read_json_file(PASSWORD_FILE, {'password': 'admin', 'version': 0})
+                password_data['password'] = post_data.get('password', password_data.get('password', 'admin'))
+                password_data['version'] = password_data.get('version', 0) + 1
+                write_json_file(PASSWORD_FILE, password_data)
+                self.send_json({'success': True, 'version': password_data['version']})
+            elif clean_path == '/api/password1':
+                password_data = read_json_file(PASSWORD_FILE1, {'password': 'admin', 'version': 0})
+                password_data['password'] = post_data.get('password', password_data.get('password', 'admin'))
+                password_data['version'] = password_data.get('version', 0) + 1
+                write_json_file(PASSWORD_FILE1, password_data)
+                self.send_json({'success': True, 'version': password_data['version']})
+            else:
+                self.send_response(404)
+                self.end_headers()
+        except Exception as e:
+            self.send_json({'error': str(e)}, 500)
+
+    def log_message(self, format, *args):
+        pass
+
+def run(port=7010):
+    server_address = ('', port)
+    httpd = ThreadingHTTPServer(server_address, APIHandler)
+    httpd.daemon_threads = True
+    print(f'多线程API服务器运行在端口 {port}')
+    httpd.serve_forever()
+
+if __name__ == '__main__':
+    port = 7010
+    if len(sys.argv) > 1:
+        port = int(sys.argv[1])
+    run(port)
+APISCRIPT
+    chmod +x "$WEB_DIR/api_server.py"
+    if systemctl is-active --quiet customer-data-api.service 2>/dev/null; then
+        systemctl restart customer-data-api.service 2>/dev/null || true
+    fi
+}
+
+setup_certbot_auto_renew() {
+    echo "配置证书自动续期 (Auto-Renew) 与 Nginx 自动重载钩子..."
+    
+    # 1. 创建 certbot deploy hook 脚本（续签成功后自动平滑重载 Nginx）
+    mkdir -p /etc/letsencrypt/renewal-hooks/deploy 2>/dev/null || true
+    cat > /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh <<'HOOKEOF'
+#!/bin/bash
+# 证书续签成功后自动重载 Nginx 使新证书生效
+if systemctl is-active --quiet nginx 2>/dev/null; then
+    systemctl reload nginx 2>/dev/null || service nginx reload 2>/dev/null || true
+elif [ -f "/usr/local/nginx/sbin/nginx" ]; then
+    /usr/local/nginx/sbin/nginx -s reload 2>/dev/null || true
+elif command -v nginx &> /dev/null; then
+    nginx -s reload 2>/dev/null || true
+fi
+HOOKEOF
+    chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+    
+    # 2. 创建 systemd 定时续签服务与定时器 (每天凌晨 03:30 和 15:30 自动检查并续期)
+    cat > /etc/systemd/system/certbot-renew.service <<'SVCEOF'
+[Unit]
+Description=Certbot Auto Renew SSL Certificates
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/certbot renew --quiet --deploy-hook "/etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh"
+SVCEOF
+
+    cat > /etc/systemd/system/certbot-renew.timer <<'TIMEOF'
+[Unit]
+Description=Timer for Certbot Auto Renew (Twice Daily)
+
+[Timer]
+OnCalendar=*-*-* 03,15:30:00
+RandomizedDelaySec=3600
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+TIMEOF
+
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl enable --now certbot-renew.timer 2>/dev/null || true
+    
+    # 3. 写入 cron 兜底任务（保障即使系统未开启 systemd timer 也能通过 cron 自动续期）
+    mkdir -p /etc/cron.d 2>/dev/null || true
+    cat > /etc/cron.d/certbot-renew <<'CRONEOF'
+# 每天凌晨 3:30 和 下午 15:30 自动检查并续期 Let's Encrypt 证书，续期成功后重载 Nginx
+30 3,15 * * * root /usr/bin/certbot renew --quiet --deploy-hook "/etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh" > /dev/null 2>&1
+CRONEOF
+    chmod 644 /etc/cron.d/certbot-renew 2>/dev/null || true
+    
+    echo "✅ 证书自动续签任务已成功配置（每天自动检测2次，续期后自动重载Nginx）"
+}
+
 echo "请选择操作："
 echo "1) 安装"
 echo "2) 卸载"
 echo "3) 更新 default.html 文件"
 echo "4) 更新 default1.html 文件"
 echo "5) 申请/更新HTTPS证书"
-read -p "请输入选项 [1-5] (默认1): " action
+echo "6) 配置与测试证书自动续签 (Auto-Renew)"
+read -p "请输入选项 [1-6] (默认1): " action
 action=${action:-1}
 
 if [ "$action" = "3" ]; then
@@ -81,6 +302,9 @@ if [ "$action" = "3" ]; then
     }
 
     download_or_copy "$CURRENT_DIR/$FILE_NAME" "$GITHUB_URL" "$WEB_DIR/$FILE_NAME" "$FILE_NAME"
+    
+    echo "同步更新API服务器组件..."
+    deploy_api_server_script
     
     echo "设置文件权限..."
     chown www-data:www-data "$WEB_DIR/$FILE_NAME" 2>/dev/null || chown nginx:nginx "$WEB_DIR/$FILE_NAME" 2>/dev/null || chown root:root "$WEB_DIR/$FILE_NAME" 2>/dev/null || true
@@ -170,6 +394,9 @@ if [ "$action" = "4" ]; then
     }
 
     download_or_copy "$CURRENT_DIR/$SECONDARY_FILE" "$SECONDARY_URL" "$WEB_DIR/$SECONDARY_FILE" "$SECONDARY_FILE"
+    
+    echo "同步更新API服务器组件..."
+    deploy_api_server_script
     
     echo "设置文件权限..."
     chown www-data:www-data "$WEB_DIR/$SECONDARY_FILE" 2>/dev/null || chown nginx:nginx "$WEB_DIR/$SECONDARY_FILE" 2>/dev/null || chown root:root "$WEB_DIR/$SECONDARY_FILE" 2>/dev/null || true
@@ -424,6 +651,20 @@ EOF
         exit 1
     fi
     
+    # 确保 deploy hook 脚本准备就绪
+    mkdir -p /etc/letsencrypt/renewal-hooks/deploy 2>/dev/null || true
+    cat > /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh <<'HOOKEOF'
+#!/bin/bash
+if systemctl is-active --quiet nginx 2>/dev/null; then
+    systemctl reload nginx 2>/dev/null || service nginx reload 2>/dev/null || true
+elif [ -f "/usr/local/nginx/sbin/nginx" ]; then
+    /usr/local/nginx/sbin/nginx -s reload 2>/dev/null || true
+elif command -v nginx &> /dev/null; then
+    nginx -s reload 2>/dev/null || true
+fi
+HOOKEOF
+    chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+
     CERTBOT_CMD="certbot certonly --webroot -w $WEB_DIR"
     for d in $DOMAIN_INPUT; do
         CERTBOT_CMD="$CERTBOT_CMD -d $d"
@@ -435,7 +676,7 @@ EOF
         CERTBOT_CMD="$CERTBOT_CMD --register-unsafely-without-email --agree-tos"
     fi
     
-    CERTBOT_CMD="$CERTBOT_CMD --non-interactive --expand"
+    CERTBOT_CMD="$CERTBOT_CMD --deploy-hook \"/etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh\" --non-interactive --expand"
     
     echo ""
     echo "开始申请/更新证书..."
@@ -485,6 +726,10 @@ server {
     
     location /api/ {
         proxy_pass http://127.0.0.1:$API_PORT;
+        proxy_http_version 1.1;
+        proxy_connect_timeout 3s;
+        proxy_read_timeout 10s;
+        proxy_set_header Connection "";
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -524,6 +769,10 @@ server {
     
     location /api/ {
         proxy_pass http://127.0.0.1:$API_PORT;
+        proxy_http_version 1.1;
+        proxy_connect_timeout 3s;
+        proxy_read_timeout 10s;
+        proxy_set_header Connection "";
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -577,6 +826,9 @@ EOF
         firewall-cmd --reload 2>/dev/null || true
     fi
     
+    echo "配置证书自动续期定时任务..."
+    setup_certbot_auto_renew
+
     echo ""
     echo "=========================================="
     echo "✅ 证书申请与HTTPS配置完成"
@@ -585,8 +837,47 @@ EOF
     echo "密钥路径: $SSL_KEY"
     echo "访问地址: https://$PRIMARY_DOMAIN$REDIRECT_SUFFIX"
     echo ""
-    echo "若更新证书，重复选择该选项即可。certbot会自动续期（见 /etc/letsencrypt/renewal）。"
-    echo "如需同时保留原有 $PORT 端口访问，可保留原配置；若不需要，可移除对应conf。"
+    echo "【自动续签状态】"
+    echo "  - 已配置 systemd 定时任务: certbot-renew.timer (每天自动检查2次)"
+    echo "  - 已配置 cron 定时任务: /etc/cron.d/certbot-renew"
+    echo "  - 已配置 Nginx 自动平滑重载钩子: /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh"
+    echo "  - 证书到期前30天内将全自动续期并重载Nginx，无需任何人工干预！"
+    echo "  - 您可随时运行本脚本选择「选项 6」测试自动续签模拟运行 (dry-run)。"
+    exit 0
+fi
+
+# 独立配置与测试证书自动续签
+if [ "$action" = "6" ]; then
+    echo ""
+    echo "=========================================="
+    echo "  配置与测试证书自动续签 (Auto-Renew)"
+    echo "=========================================="
+    echo ""
+    
+    if ! command -v certbot &> /dev/null; then
+        echo "错误：系统中未检测到 certbot，请先运行选项 5 申请证书。"
+        exit 1
+    fi
+    
+    setup_certbot_auto_renew
+    
+    echo ""
+    echo "正在测试证书自动续期模拟运行 (dry-run)..."
+    if certbot renew --dry-run; then
+        echo ""
+        echo "=========================================="
+        echo "🎉 自动续签模拟测试通过！"
+        echo "=========================================="
+        echo "证书到期前30天内，系统将自动完成续签并平滑重载Nginx，完全无需人工干预。"
+    else
+        echo ""
+        echo "警告：续签模拟测试未全部通过，请检查域名80端口解析与连通性。"
+    fi
+    
+    echo ""
+    echo "当前证书状态与到期时间："
+    certbot certificates 2>/dev/null || true
+    echo ""
     exit 0
 fi
 
@@ -610,7 +901,13 @@ if [ "$action" = "2" ]; then
     echo "正在禁用Nginx服务..."
     systemctl disable nginx 2>/dev/null || true
     
-    echo "正在删除systemd服务文件..."
+    echo "正在删除systemd服务文件与定时任务..."
+    systemctl stop certbot-renew.timer 2>/dev/null || true
+    systemctl disable certbot-renew.timer 2>/dev/null || true
+    rm -f /etc/systemd/system/certbot-renew.timer
+    rm -f /etc/systemd/system/certbot-renew.service
+    rm -f /etc/cron.d/certbot-renew
+    rm -f /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
     rm -f /etc/systemd/system/nginx.service
     rm -f /etc/systemd/system/customer-data-api.service
     systemctl daemon-reload 2>/dev/null || true
@@ -1082,6 +1379,10 @@ server {
     
     location /api/ {
         proxy_pass http://127.0.0.1:7010;
+        proxy_http_version 1.1;
+        proxy_connect_timeout 3s;
+        proxy_read_timeout 10s;
+        proxy_set_header Connection "";
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -1115,6 +1416,10 @@ server {
     
     location /api/ {
         proxy_pass http://127.0.0.1:$API_PORT;
+        proxy_http_version 1.1;
+        proxy_connect_timeout 3s;
+        proxy_read_timeout 10s;
+        proxy_set_header Connection "";
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -1156,6 +1461,10 @@ server {
     
     location /api/ {
         proxy_pass http://127.0.0.1:7010;
+        proxy_http_version 1.1;
+        proxy_connect_timeout 3s;
+        proxy_read_timeout 10s;
+        proxy_set_header Connection "";
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -1190,6 +1499,10 @@ server {
     
     location /api/ {
         proxy_pass http://127.0.0.1:$API_PORT;
+        proxy_http_version 1.1;
+        proxy_connect_timeout 3s;
+        proxy_read_timeout 10s;
+        proxy_set_header Connection "";
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -1226,6 +1539,10 @@ server {
     
     location /api/ {
         proxy_pass http://127.0.0.1:7010;
+        proxy_http_version 1.1;
+        proxy_connect_timeout 3s;
+        proxy_read_timeout 10s;
+        proxy_set_header Connection "";
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -1259,6 +1576,10 @@ server {
     
     location /api/ {
         proxy_pass http://127.0.0.1:$API_PORT;
+        proxy_http_version 1.1;
+        proxy_connect_timeout 3s;
+        proxy_read_timeout 10s;
+        proxy_set_header Connection "";
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -1416,133 +1737,7 @@ echo "启动API服务器..."
 API_PORT="7010"
 API_SCRIPT="$WEB_DIR/api_server.py"
 
-if [ ! -f "$API_SCRIPT" ]; then
-    echo "创建API服务器脚本..."
-    cat > "$API_SCRIPT" <<'APISCRIPT'
-#!/usr/bin/env python3
-
-import json
-import os
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import sys
-
-DATA_FILE = '/var/www/html/data.json'
-DATA_FILE1 = '/var/www/html/data1.json'
-SETTINGS_FILE = '/var/www/html/settings.json'
-SETTINGS_FILE1 = '/var/www/html/settings1.json'
-PASSWORD_FILE = '/var/www/html/password.json'
-PASSWORD_FILE1 = '/var/www/html/password1.json'
-
-def read_json_file(filepath, default):
-    if os.path.exists(filepath):
-        with open(filepath, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return default
-
-def write_json_file(filepath, data):
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    with open(filepath, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-class APIHandler(BaseHTTPRequestHandler):
-    def send_json(self, data, status=200):
-        self.send_response(status)
-        self.send_header('Content-Type', 'application/json; charset=utf-8')
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.end_headers()
-        self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
-
-    def do_OPTIONS(self):
-        self.send_json({}, 200)
-
-    def do_GET(self):
-        if self.path == '/api/data':
-            try:
-                self.send_json(read_json_file(DATA_FILE, []))
-            except Exception as e:
-                self.send_json({'error': str(e)}, 500)
-        elif self.path == '/api/data1':
-            try:
-                self.send_json(read_json_file(DATA_FILE1, []))
-            except Exception as e:
-                self.send_json({'error': str(e)}, 500)
-        elif self.path == '/api/settings':
-            try:
-                self.send_json(read_json_file(SETTINGS_FILE, {}))
-            except Exception as e:
-                self.send_json({'error': str(e)}, 500)
-        elif self.path == '/api/settings1':
-            try:
-                self.send_json(read_json_file(SETTINGS_FILE1, {}))
-            except Exception as e:
-                self.send_json({'error': str(e)}, 500)
-        elif self.path == '/api/password':
-            try:
-                password_data = read_json_file(PASSWORD_FILE, {'password': 'admin', 'version': 0})
-                self.send_json({'password': password_data.get('password', 'admin'), 'version': password_data.get('version', 0)})
-            except Exception as e:
-                self.send_json({'error': str(e)}, 500)
-        elif self.path == '/api/password1':
-            try:
-                password_data = read_json_file(PASSWORD_FILE1, {'password': 'admin', 'version': 0})
-                self.send_json({'password': password_data.get('password', 'admin'), 'version': password_data.get('version', 0)})
-            except Exception as e:
-                self.send_json({'error': str(e)}, 500)
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def do_POST(self):
-        try:
-            content_length = int(self.headers['Content-Length'])
-            post_data = json.loads(self.rfile.read(content_length).decode('utf-8'))
-            if self.path == '/api/data':
-                write_json_file(DATA_FILE, post_data)
-                self.send_json({'success': True})
-            elif self.path == '/api/data1':
-                write_json_file(DATA_FILE1, post_data)
-                self.send_json({'success': True})
-            elif self.path == '/api/settings':
-                write_json_file(SETTINGS_FILE, post_data)
-                self.send_json({'success': True})
-            elif self.path == '/api/settings1':
-                write_json_file(SETTINGS_FILE1, post_data)
-                self.send_json({'success': True})
-            elif self.path == '/api/password':
-                password_data = read_json_file(PASSWORD_FILE, {'password': 'admin', 'version': 0})
-                password_data['password'] = post_data.get('password', password_data.get('password', 'admin'))
-                password_data['version'] = password_data.get('version', 0) + 1
-                write_json_file(PASSWORD_FILE, password_data)
-                self.send_json({'success': True, 'version': password_data['version']})
-            elif self.path == '/api/password1':
-                password_data = read_json_file(PASSWORD_FILE1, {'password': 'admin', 'version': 0})
-                password_data['password'] = post_data.get('password', password_data.get('password', 'admin'))
-                password_data['version'] = password_data.get('version', 0) + 1
-                write_json_file(PASSWORD_FILE1, password_data)
-                self.send_json({'success': True, 'version': password_data['version']})
-            else:
-                self.send_response(404)
-                self.end_headers()
-        except Exception as e:
-            self.send_json({'error': str(e)}, 500)
-
-    def log_message(self, format, *args):
-        pass
-
-def run(port=7010):
-    server_address = ('', port)
-    httpd = HTTPServer(server_address, APIHandler)
-    print(f'API服务器运行在端口 {port}')
-    httpd.serve_forever()
-
-if __name__ == '__main__':
-    port = 7010
-    if len(sys.argv) > 1:
-        port = int(sys.argv[1])
-    run(port)
-APISCRIPT
-    chmod +x "$API_SCRIPT"
-fi
+deploy_api_server_script
 
 pkill -f "api_server.py" 2>/dev/null || true
 sleep 1
