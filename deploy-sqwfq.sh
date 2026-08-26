@@ -7,16 +7,22 @@ DEFAULT_DOMAIN="heartbeatmonitor.cloud"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m'
 get_docker_compose_cmd() {
-    if docker compose version &> /dev/null; then echo "docker compose"; else echo "docker-compose"; fi
+    if docker compose version &> /dev/null; then
+        echo "docker compose"
+    elif command -v docker-compose &> /dev/null; then
+        echo "docker-compose"
+    else
+        echo "docker compose"
+    fi
 }
-DOCKER_COMPOSE_CMD="docker-compose"
+DOCKER_COMPOSE_CMD=$(get_docker_compose_cmd)
 log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 ensure_project_dir() {
+    DOCKER_COMPOSE_CMD=$(get_docker_compose_cmd)
     if [ -f "$COMPOSE_FILE" ]; then
         return 0
     fi
@@ -212,6 +218,18 @@ install_system() {
     if ! command -v docker &> /dev/null || ! docker compose version &> /dev/null; then log_error "Docker或Docker Compose安装失败"; exit 1; fi
     if [ "$EUID" -eq 0 ] && [ -n "$SUDO_USER" ]; then sudo usermod -aG docker "$SUDO_USER"; fi
     if ! id -u activation >/dev/null 2>&1; then sudo useradd -r -s /bin/false activation; fi
+    
+    # 创建 docker-compose 兼容包装脚本（针对无独立 docker-compose 命令的系统）
+    if command -v docker &> /dev/null && ! command -v docker-compose &> /dev/null; then
+        if docker compose version &> /dev/null; then
+            sudo tee /usr/local/bin/docker-compose > /dev/null <<'EOF'
+#!/bin/sh
+exec docker compose "$@"
+EOF
+            sudo chmod +x /usr/local/bin/docker-compose 2>/dev/null || true
+        fi
+    fi
+
     create_directories
     sudo chown -R activation:activation logs uploads backups 2>/dev/null || true
     sudo tee -a /etc/security/limits.conf > /dev/null <<EOF
@@ -486,6 +504,7 @@ show_menu() {
     esac
 }
 main() {
+    DOCKER_COMPOSE_CMD=$(get_docker_compose_cmd)
     if [ $# -eq 0 ]; then show_menu; return; fi
     case "$1" in
         install) if [ "$EUID" -ne 0 ]; then exit 1; fi; install_system ;;
