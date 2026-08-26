@@ -15,6 +15,45 @@ DOCKER_COMPOSE_CMD="docker-compose"
 log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+ensure_project_dir() {
+    if [ -f "$COMPOSE_FILE" ]; then
+        return 0
+    fi
+    # 尝试从 systemd 服务获取已安装的 WorkingDirectory
+    if [ -f "/etc/systemd/system/activation-system.service" ]; then
+        local sys_dir=$(grep "^WorkingDirectory=" /etc/systemd/system/activation-system.service 2>/dev/null | cut -d'=' -f2 | xargs)
+        if [ -n "$sys_dir" ] && [ -f "$sys_dir/$COMPOSE_FILE" ]; then
+            log_info "自动切换至项目安装目录: $sys_dir"
+            cd "$sys_dir"
+            return 0
+        fi
+    fi
+    # 尝试常见安装路径
+    local common_dirs=(
+        "/var/www"
+        "/var/www/activation-system"
+        "/var/www/www"
+        "/root/www"
+        "/root/activation-system"
+        "/opt/activation-system"
+        "/root/hysteria"
+        "/home/ubuntu/activation-system"
+        "/home/debian/activation-system"
+    )
+    for d in "${common_dirs[@]}"; do
+        if [ -f "$d/$COMPOSE_FILE" ]; then
+            log_info "自动切换至项目安装目录: $d"
+            cd "$d"
+            return 0
+        fi
+    done
+
+    log_error "当前目录 ($(pwd)) 未找到 $COMPOSE_FILE 配置文件！"
+    log_warn "请先使用 cd 命令切换到项目所在的目录（例如: cd /root/www 或项目克隆目录），然后再运行此脚本。"
+    exit 1
+}
+
 check_dependencies() {
     log_info "检查系统依赖..."
     if ! command -v docker &> /dev/null; then log_error "Docker 未安装，请先安装 Docker"; exit 1; fi
@@ -443,18 +482,18 @@ main() {
     if [ $# -eq 0 ]; then show_menu; return; fi
     case "$1" in
         install) if [ "$EUID" -ne 0 ]; then exit 1; fi; install_system ;;
-        ssl|certificate) if [ "$EUID" -ne 0 ]; then exit 1; fi; setup_https_certificate ;;
-        renew) if [ "$EUID" -ne 0 ]; then exit 1; fi; auto_renew_certificate ;;
-        uninstall) if [ "$EUID" -ne 0 ]; then exit 1; fi; uninstall_system ;;
-        start) check_dependencies; check_config; create_directories; start_services ;;
-        stop) stop_services ;;
-        restart) restart_services ;;
-        logs) show_logs ;;
-        status) show_status ;;
-        backup) backup_data ;;
-        update) update_app ;;
-        clean) clean_cache_logs ;;
-        cleanup) cleanup ;;
+        ssl|certificate) if [ "$EUID" -ne 0 ]; then exit 1; fi; ensure_project_dir; setup_https_certificate ;;
+        renew) if [ "$EUID" -ne 0 ]; then exit 1; fi; ensure_project_dir; auto_renew_certificate ;;
+        uninstall) if [ "$EUID" -ne 0 ]; then exit 1; fi; ensure_project_dir; uninstall_system ;;
+        start) ensure_project_dir; check_dependencies; check_config; create_directories; start_services ;;
+        stop) ensure_project_dir; stop_services ;;
+        restart) ensure_project_dir; restart_services ;;
+        logs) ensure_project_dir; show_logs ;;
+        status) ensure_project_dir; show_status ;;
+        backup) ensure_project_dir; backup_data ;;
+        update) ensure_project_dir; update_app ;;
+        clean) ensure_project_dir; clean_cache_logs ;;
+        cleanup) ensure_project_dir; cleanup ;;
         *) show_menu ;;
     esac
 }
