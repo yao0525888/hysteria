@@ -68,51 +68,11 @@ check_dependencies() {
 }
 check_config() {
     log_info "检查配置文件..."
-    if [ ! -f "$ENV_FILE" ]; then log_warn "生产环境配置文件 $ENV_FILE 不存在，创建默认配置"; create_default_env_file; fi
-    required_vars=("JWT_SECRET" "SESSION_SECRET" "ENCRYPTION_KEY" "ADMIN_PASSWORD")
-    missing_vars=()
-    for var in "${required_vars[@]}"; do
-        if ! grep -q "^${var}=" "$ENV_FILE" || grep -q "^${var}=your-" "$ENV_FILE"; then missing_vars+=("$var"); fi
-    done
-    if [ ${#missing_vars[@]} -gt 0 ]; then
-        log_warn "以下环境变量需要设置或修改为安全值:"
-        for var in "${missing_vars[@]}"; do log_warn "  - $var"; done
-        log_warn "请编辑 $ENV_FILE 文件进行配置"
-    else
-        log_info "配置文件检查通过"
+    if [ ! -f "$ENV_FILE" ]; then
+        log_error "生产环境配置文件 $ENV_FILE 不存在！请先配置好 $ENV_FILE 文件。"
+        exit 1
     fi
-}
-create_default_env_file() {
-    local jwt_sec=$(openssl rand -hex 32 2>/dev/null || echo "jwt-secret-$(date +%s%N)")
-    local sess_sec=$(openssl rand -hex 32 2>/dev/null || echo "session-secret-$(date +%s%N)")
-    local enc_key=$(openssl rand -hex 16 2>/dev/null || echo "encryption-key-32characters12345")
-    cat > "$ENV_FILE" << EOF
-NODE_ENV=production
-PORT=7030
-ADMIN_PORT=7030
-HTTP_PORT=80
-HTTPS_PORT=8443
-MONGODB_URI=mongodb://admin:password@mongodb:27017/activation_system?authSource=admin
-MONGO_ROOT_USERNAME=admin
-MONGO_ROOT_PASSWORD=password
-JWT_SECRET=${jwt_sec}
-JWT_EXPIRES_IN=24h
-REFRESH_TOKEN_EXPIRES_IN=7d
-SESSION_SECRET=${sess_sec}
-CORS_ORIGIN=https://${DEFAULT_DOMAIN},http://localhost:7030
-ENCRYPTION_KEY=${enc_key}
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=password
-ADMIN_EMAIL=admin@${DEFAULT_DOMAIN}
-DEFAULT_LICENSE_DURATION=365
-MAX_LICENSE_DURATION=3650
-LICENSE_CHECK_INTERVAL=3600000
-MAX_FILE_SIZE=10485760
-UPLOAD_PATH=./uploads
-LOG_LEVEL=info
-LOG_FILE=./logs/app.log
-EOF
-    log_info "已创建默认配置文件: $ENV_FILE"
+    log_info "配置文件检查通过: $ENV_FILE"
 }
 create_directories() {
     log_info "创建必要的目录..."
