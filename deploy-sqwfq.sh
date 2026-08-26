@@ -83,21 +83,26 @@ check_config() {
     fi
 }
 create_default_env_file() {
+    local jwt_sec=$(openssl rand -hex 32 2>/dev/null || echo "jwt-secret-$(date +%s%N)")
+    local sess_sec=$(openssl rand -hex 32 2>/dev/null || echo "session-secret-$(date +%s%N)")
+    local enc_key=$(openssl rand -hex 16 2>/dev/null || echo "encryption-key-32characters12345")
     cat > "$ENV_FILE" << EOF
 NODE_ENV=production
 PORT=7030
 ADMIN_PORT=7030
+HTTP_PORT=80
+HTTPS_PORT=8443
 MONGODB_URI=mongodb://admin:password@mongodb:27017/activation_system?authSource=admin
 MONGO_ROOT_USERNAME=admin
 MONGO_ROOT_PASSWORD=password
-JWT_SECRET=your-production-jwt-secret-key-change-this-in-production-32-chars-minimum
+JWT_SECRET=${jwt_sec}
 JWT_EXPIRES_IN=24h
 REFRESH_TOKEN_EXPIRES_IN=7d
-SESSION_SECRET=your-production-session-secret-key-change-this-in-production
+SESSION_SECRET=${sess_sec}
 CORS_ORIGIN=https://${DEFAULT_DOMAIN},http://localhost:7030
-ENCRYPTION_KEY=your-32-character-encryption-key-for-production-only
+ENCRYPTION_KEY=${enc_key}
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=change-this-password-in-production
+ADMIN_PASSWORD=password
 ADMIN_EMAIL=admin@${DEFAULT_DOMAIN}
 DEFAULT_LICENSE_DURATION=365
 MAX_LICENSE_DURATION=3650
@@ -111,12 +116,14 @@ EOF
 }
 create_directories() {
     log_info "创建必要的目录..."
-    mkdir -p logs uploads docker/ssl
+    mkdir -p logs uploads docker/ssl backups
     chmod 755 logs uploads
     log_info "目录创建完成"
 }
 start_services() {
     log_info "启动服务..."
+    check_config
+    create_directories
     $DOCKER_COMPOSE_CMD pull
     $DOCKER_COMPOSE_CMD up -d
     sleep 10
@@ -312,24 +319,12 @@ setup_https_certificate() {
         fi
     done
     mkdir -p docker/nginx/conf.d
-    cat > docker/nginx/conf.d/acme-challenge.conf <<EOF
-server {
-    listen 80;
-    server_name $DOMAIN_INPUT;
-    root /var/www/html;
-    location /.well-known/acme-challenge/ { alias /var/www/html/.well-known/acme-challenge/; try_files \$uri =404; }
-    location / { return 301 https://$PRIMARY_DOMAIN\$request_uri; }
-}
-EOF
-    $DOCKER_COMPOSE_CMD up -d nginx
-    sleep 5
-    CERTBOT_CMD="docker run --rm -v $(pwd)/docker/nginx/html:/var/www/html -v /etc/letsencrypt:/etc/letsencrypt certbot/certbot certonly --webroot -w /var/www/html"
+    CERTBOT_CMD="docker run --rm -p 80:80 -v /etc/letsencrypt:/etc/letsencrypt certbot/certbot certonly --standalone"
     for d in $DOMAIN_INPUT; do CERTBOT_CMD="$CERTBOT_CMD -d $d"; done
     if [ -n "$CERT_EMAIL" ]; then CERTBOT_CMD="$CERTBOT_CMD -m $CERT_EMAIL --agree-tos"; else CERTBOT_CMD="$CERTBOT_CMD --register-unsafely-without-email --agree-tos"; fi
     CERTBOT_CMD="$CERTBOT_CMD --non-interactive --expand"
     eval "$CERTBOT_CMD" || { log_error "证书申请失败"; exit 1; }
-    $DOCKER_COMPOSE_CMD stop nginx
-    rm -f docker/nginx/conf.d/acme-challenge.conf
+    rm -f docker/nginx/conf.d/activation_site.conf
     cat > docker/nginx/conf.d/ssl.conf <<EOF
 server {
     listen 80;
@@ -417,25 +412,10 @@ for svc in "\${HOST_SERVICES[@]}"; do
         if systemctl is-active --quiet "\$svc" 2>/dev/null; then systemctl stop "\$svc" 2>/dev/null || true; STOPPED_HOST_SERVICES+=("\$svc"); fi
     fi
 done
-if [ -f "docker/nginx/conf.d/ssl.conf" ]; then mv docker/nginx/conf.d/ssl.conf docker/nginx/conf.d/ssl.conf.bak; fi
-cat > docker/nginx/conf.d/acme-challenge.conf <<INNER_EOF
-server {
-    listen 80;
-    server_name $DOMAIN_INPUT;
-    root /var/www/html;
-    location /.well-known/acme-challenge/ { alias /var/www/html/.well-known/acme-challenge/; try_files \\\$uri =404; }
-    location / { return 301 https://$PRIMARY_DOMAIN\\\$request_uri; }
-}
-INNER_EOF
-\$DOCKER_COMPOSE_CMD up -d nginx
-sleep 5
-CERTBOT_CMD="docker run --rm -v \$(pwd)/docker/nginx/html:/var/www/html -v /etc/letsencrypt:/etc/letsencrypt certbot/certbot certonly --webroot -w /var/www/html --force-renewal"
+CERTBOT_CMD="docker run --rm -p 80:80 -v /etc/letsencrypt:/etc/letsencrypt certbot/certbot certonly --standalone --force-renewal"
 for d in $DOMAIN_INPUT; do CERTBOT_CMD="\$CERTBOT_CMD -d \$d"; done
 CERTBOT_CMD="\$CERTBOT_CMD --register-unsafely-without-email --agree-tos --non-interactive --expand"
 eval "\$CERTBOT_CMD" || true
-\$DOCKER_COMPOSE_CMD stop nginx
-rm -f docker/nginx/conf.d/acme-challenge.conf
-if [ -f "docker/nginx/conf.d/ssl.conf.bak" ]; then mv docker/nginx/conf.d/ssl.conf.bak docker/nginx/conf.d/ssl.conf; fi
 \$DOCKER_COMPOSE_CMD up -d nginx
 sleep 5
 for svc in "\${STOPPED_HOST_SERVICES[@]}"; do systemctl start "\$svc" 2>/dev/null || true; done
