@@ -218,6 +218,12 @@ install_system() {
 activation soft nofile 65536
 activation hard nofile 65536
 EOF
+
+    local SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+    local SCRIPT_FULL_PATH="$SCRIPT_DIR/$SCRIPT_NAME"
+    ln -sf "$SCRIPT_NAME" "$SCRIPT_DIR/deploy.sh" 2>/dev/null || true
+
     sudo tee /etc/systemd/system/activation-system.service > /dev/null <<EOF
 [Unit]
 Description=Activation System Service
@@ -227,9 +233,9 @@ Requires=docker.service
 Type=oneshot
 RemainAfterExit=yes
 User=root
-WorkingDirectory=$(pwd)
-ExecStart=$(pwd)/deploy.sh start
-ExecStop=$(pwd)/deploy.sh stop
+WorkingDirectory=$SCRIPT_DIR
+ExecStart=$SCRIPT_FULL_PATH start
+ExecStop=$SCRIPT_FULL_PATH stop
 StandardOutput=journal
 StandardError=journal
 [Install]
@@ -237,7 +243,7 @@ WantedBy=multi-user.target
 EOF
     sudo systemctl daemon-reload
     sudo tee /etc/logrotate.d/activation-system > /dev/null <<EOF
-$(pwd)/logs/*.log {
+$SCRIPT_DIR/logs/*.log {
     daily
     missingok
     rotate 52
@@ -255,9 +261,10 @@ EOF
         openssl req -x509 -newkey rsa:4096 -keyout docker/ssl/key.pem -out docker/ssl/cert.pem -days 365 -nodes -subj "/C=CN/ST=State/L=City/O=Organization/CN=localhost"
         sudo chown -R activation:activation docker/ssl
     fi
-    if [ -f "scripts/init-production.js" ]; then $DOCKER_COMPOSE_CMD exec app node scripts/init-production.js; fi
+    start_services
+    if [ -f "scripts/init-production.js" ]; then $DOCKER_COMPOSE_CMD exec -T app node scripts/init-production.js 2>/dev/null || true; fi
     sudo systemctl enable activation-system || true
-    log_info "系统安装完成！"
+    log_info "系统安装与初始化启动完成！"
 }
 setup_https_certificate() {
     log_info "开始配置HTTPS证书..."
