@@ -12,7 +12,7 @@ show_menu() {
     echo ""
     echo "请选择操作："
     echo "  1) 安装后端服务"
-    echo "  2) API Key 管理 (多 API / 次数管理)"
+    echo "  2) API Key 管理"
     echo "  3) 修改 Hysteria2 密码"
     echo "  4) 修改 Xray UUID"
     echo "  5) 查看当前配置"
@@ -55,8 +55,8 @@ manage_api_keys() {
     node "$PROJECT_DIR/backend/manage_keys.js" list 2>/dev/null || true
 
     echo "请选择操作："
-    echo "  1) 添加新 API Key (设置次数及备注)"
-    echo "  2) 充值/增加 API Key 次数"
+    echo "  1) 添加新 API Key"
+    echo "  2) 充值 API Key 次数"
     echo "  3) 重新设定 API Key 剩余次数"
     echo "  4) 启用/禁用 API Key"
     echo "  5) 删除 API Key"
@@ -87,13 +87,13 @@ add_api_key() {
     echo "========================================="
     echo ""
     
-    echo -n "请输入备注名称 (例如: 客户A / 测试 / 张三，直接回车默认'新用户'): "
+    echo -n "请输入备注名称 (默认'新用户'): "
     read -r KEY_NAME
     if [ -z "$KEY_NAME" ]; then
         KEY_NAME="新用户"
     fi
 
-    echo -n "请输入可用次数 (直接回车默认 100 次): "
+    echo -n "请输入可用次数 (默认 100 次): "
     read -r KEY_COUNT
     if [ -z "$KEY_COUNT" ]; then
         KEY_COUNT=100
@@ -107,7 +107,7 @@ add_api_key() {
         return
     fi
 
-    echo -n "请输入自定义 API Key (直接回车自动生成 64 位随机 Key): "
+    echo -n "请输入自定义 API Key: "
     read -r CUSTOM_KEY
 
     echo ""
@@ -132,7 +132,7 @@ recharge_api_key() {
     echo ""
     node "$PROJECT_DIR/backend/manage_keys.js" list 2>/dev/null || true
 
-    echo -n "请输入要充值的 API Key (或输入序号): "
+    echo -n "请输入要充值的 API Key序号: "
     read -r TARGET_INPUT
     
     if [ -z "$TARGET_INPUT" ]; then
@@ -185,7 +185,7 @@ set_api_key_count() {
     echo ""
     node "$PROJECT_DIR/backend/manage_keys.js" list 2>/dev/null || true
 
-    echo -n "请输入要设定的 API Key (或输入序号): "
+    echo -n "请输入要设定的 API Key 序号: "
     read -r TARGET_INPUT
     
     if [ -z "$TARGET_INPUT" ]; then
@@ -208,7 +208,7 @@ set_api_key_count() {
         fi
     fi
 
-    echo -n "请输入新的剩余可用次数 (例如: 200): "
+    echo -n "请输入新的剩余可用次数: "
     read -r NEW_COUNT
 
     if ! [[ "$NEW_COUNT" =~ ^[0-9]+$ ]]; then
@@ -237,7 +237,7 @@ toggle_api_key() {
     echo ""
     node "$PROJECT_DIR/backend/manage_keys.js" list 2>/dev/null || true
 
-    echo -n "请输入要切换状态的 API Key (或输入序号): "
+    echo -n "请输入要切换状态的 API Key序号: "
     read -r TARGET_INPUT
     
     if [ -z "$TARGET_INPUT" ]; then
@@ -278,7 +278,7 @@ delete_api_key() {
     echo ""
     node "$PROJECT_DIR/backend/manage_keys.js" list 2>/dev/null || true
 
-    echo -n "请输入要删除的 API Key (或输入序号): "
+    echo -n "请输入要删除的 API Key序号: "
     read -r TARGET_INPUT
     
     if [ -z "$TARGET_INPUT" ]; then
@@ -325,7 +325,7 @@ get_api_key_detail() {
     echo ""
     node "$PROJECT_DIR/backend/manage_keys.js" list 2>/dev/null || true
 
-    echo -n "请输入要查看的 API Key (或输入序号): "
+    echo -n "请输入要查看的 API Key序号: "
     read -r TARGET_INPUT
     
     if [ -z "$TARGET_INPUT" ]; then
