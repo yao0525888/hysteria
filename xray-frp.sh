@@ -13,8 +13,8 @@ declare -A COUNTRY_MAP=(
     ["AT"]="奥地利" ["BE"]="比利时" ["IE"]="爱尔兰" ["PL"]="波兰" ["NZ"]="新西兰" ["MX"]="墨西哥"
     ["ID"]="印度尼西亚" ["TH"]="泰国" ["VN"]="越南" ["MY"]="马来西亚" ["PH"]="菲律宾"
 )
-FRP_VERSION="v0.62.0"
-XRAY_VERSION="v25.9.11"
+FRP_VERSION="v0.66.0"
+XRAY_VERSION="25.9.11"
 FRPS_PORT="7006"
 SILENT_MODE=true
 gen_frps_token() {
@@ -48,8 +48,27 @@ check_root() {
         log_error "请使用 sudo 或 root 权限运行脚本"
     fi
 }
+install_dependencies() {
+    [ "$EUID" -ne 0 ] && exit 1
+
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update -y >/dev/null 2>&1
+        command -v unzip >/dev/null 2>&1 || apt-get install -y unzip >/dev/null 2>&1
+        command -v wget  >/dev/null 2>&1 || apt-get install -y wget  >/dev/null 2>&1
+    elif command -v dnf >/dev/null 2>&1; then
+        command -v unzip >/dev/null 2>&1 || dnf install -y unzip >/dev/null 2>&1
+        command -v wget  >/dev/null 2>&1 || dnf install -y wget  >/dev/null 2>&1
+    elif command -v yum >/dev/null 2>&1; then
+        command -v unzip >/dev/null 2>&1 || yum install -y unzip >/dev/null 2>&1
+        command -v wget  >/dev/null 2>&1 || yum install -y wget  >/dev/null 2>&1
+    elif command -v pacman >/dev/null 2>&1; then
+        command -v unzip >/dev/null 2>&1 || pacman -S --noconfirm unzip >/dev/null 2>&1
+        command -v wget  >/dev/null 2>&1 || pacman -S --noconfirm wget  >/dev/null 2>&1
+    else
+        exit 1
+    fi
+}
 uninstall_frps() {
-    log_info "卸载旧版FRPS服务..."
     systemctl stop frps >/dev/null 2>&1
     systemctl disable frps >/dev/null 2>&1
     rm -f /etc/systemd/system/frps.service
@@ -58,14 +77,16 @@ uninstall_frps() {
 }
 install_frps() {
     log_step "1" "2" "安装FRPS服务..."
-    if ! command -v wget >/dev/null 2>&1; then
-        log_error "wget 未安装，请先安装wget: apt-get install wget 或 yum install wget"
-    fi
+sudo sh -c 'cat <<EOF >> /etc/sysctl.conf
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+net.ipv6.conf.lo.disable_ipv6 = 1
+EOF
+sysctl -p >/dev/null 2>&1'
     uninstall_frps
     local FRP_NAME="frp_${FRP_VERSION#v}_linux_amd64"
     local FRP_FILE="${FRP_NAME}.tar.gz"
     cd /usr/local/ || exit 1
-    log_info "下载FRPS（版本：${FRP_VERSION}）..."
     if ! wget "https://github.com/fatedier/frp/releases/download/${FRP_VERSION}/${FRP_FILE}" -O "${FRP_FILE}" >/dev/null 2>&1; then
         exit 1
     fi
@@ -102,18 +123,14 @@ install_frps() {
         exit 1
     fi
     if ! systemctl enable --now frps >/dev/null 2>&1; then
-        echo -e "${RED}FRPS启动失败，检查详细信息：${NC}"
-        systemctl status frps --no-pager
-        echo -e "${YELLOW}配置文件内容：${NC}"
-        cat /etc/frp/frps.toml
-        echo -e "${YELLOW}FRPS二进制文件：${NC}"
-        ls -la /usr/local/frp/frps
+        echo -e "${RED}FRPS启动失败${NC}"
         exit 1
     fi
     log_success "FRPS安装成功"
 }
 install_xray() {
     log_step "2" "2" "安装Xray服务..."
+    uninstall_xray
     ARCH=$(uname -m)
     case $ARCH in
         x86_64) ARCH="64" ;;
@@ -122,17 +139,16 @@ install_xray() {
         *) log_error "不支持的架构" ;;
     esac
     VER=$XRAY_VERSION
-    log_info "Xray 版本号: $VER"
     URL="https://github.com/XTLS/Xray-core/releases/download/$VER/Xray-linux-$ARCH.zip"
     wget -q -O xray.zip $URL
     if [ ! -s xray.zip ]; then
-        log_error "Xray 安装包下载失败，文件不存在或为空，URL: $URL"
+        log_error "Xray 下载失败"
     fi
     if ! unzip -q -o xray.zip; then
-        log_error "Xray 安装包解压失败，可能下载失败或文件损坏"
+        log_error "Xray 解压失败"
     fi
     if [ ! -f xray ]; then
-        log_error "Xray 主程序未找到，安装失败"
+        log_error "Xray 主程序未找到"
     fi
     chmod +x xray
     mv xray /usr/local/bin/ >/dev/null 2>&1
@@ -231,7 +247,6 @@ show_results() {
     echo -e "${GREEN}$LINK${NC}\n"
 }
 uninstall_xray() {
-    log_step "1" "1" "卸载Xray服务..."
     systemctl stop xray >/dev/null 2>&1
     systemctl disable xray >/dev/null 2>&1
     rm -f /etc/systemd/system/xray.service
@@ -240,13 +255,11 @@ uninstall_xray() {
     rm -f /usr/local/bin/geoip.dat
     rm -f /usr/local/bin/geosite.dat
     systemctl daemon-reload >/dev/null 2>&1
-    log_success "Xray卸载成功"
 }
 modify_xray_port() {
-    log_step "1" "1" "修改Xray端口..."
     read -p "请输入新的端口号(1-65535): " NEW_PORT
     if ! [[ "$NEW_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_PORT" -lt 1 ] || [ "$NEW_PORT" -gt 65535 ]; then
-        log_error "无效的端口号，请输入1-65535之间的数字"
+        log_error "无效的端口号"
     fi
     if netstat -tuln | grep -q ":$NEW_PORT "; then
         log_error "端口 $NEW_PORT 已被占用"
@@ -280,7 +293,6 @@ modify_xray_port() {
     echo -e "${GREEN}$LINK${NC}\n"
 }
 modify_xray_protocol() {
-    log_step "1" "1" "修改Xray协议..."
     echo "请选择协议类型："
     echo "1. tcp"
     echo "2. ws"
@@ -323,6 +335,22 @@ show_xray_link() {
     echo -e "\n${YELLOW}>>> 当前Xray Reality分享链接：${NC}"
     echo -e "${GREEN}$LINK${NC}\n"
 }
+check_and_uninstall() {
+    local has_installed=false
+    if [ -f /etc/systemd/system/frps.service ] || [ -d /usr/local/frp ] || [ -d /etc/frp ] || systemctl is-active --quiet frps 2>/dev/null; then
+        has_installed=true
+    fi
+    if [ -f /etc/systemd/system/xray.service ] || [ -f /usr/local/bin/xray ] || [ -d /usr/local/etc/xray ] || systemctl is-active --quiet xray 2>/dev/null; then
+        has_installed=true
+    fi
+
+    if [ "$has_installed" = true ]; then
+        echo -e "${YELLOW}[提示] 检测到已存在安装，正在先卸载旧版本...${NC}"
+        uninstall_frps
+        uninstall_xray
+        log_success "旧版本卸载完成，准备开始全新安装"
+    fi
+}
 show_menu() {
     echo -e "${YELLOW}=== Xray & FRPS 管理脚本 ===${NC}"
     echo -e "${GREEN}1.${NC} 安装 Xray + FRPS"
@@ -335,13 +363,13 @@ show_menu() {
 }
 main() {
     check_root
-    
     while true; do
         show_menu
         read -p "请选择操作 [1-6]: " choice
-        
         case $choice in
             1)
+                check_and_uninstall
+                install_dependencies
                 install_frps
                 install_xray
                 cleanup
