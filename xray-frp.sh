@@ -274,6 +274,18 @@ restart_services() {
         log_success "FRPS 服务重启成功！"
     fi
 }
+get_xray_shortid() {
+    local cfg="/usr/local/etc/xray/config.json"
+    [ ! -f "$cfg" ] && return
+    local sid=""
+    if command -v jq >/dev/null 2>&1; then
+        sid=$(jq -r '.inbounds[0].streamSettings.realitySettings.shortIds[0] // empty' "$cfg" 2>/dev/null)
+    fi
+    if [ -z "$sid" ] || [ "$sid" = "null" ]; then
+        sid=$(sed -n '/"shortIds"/,/\]/{ /"shortIds"[^[]*\[/s/.*\[[[:space:]]*"\([^"]*\)".*/\1/p; /"shortIds"/d; /"[^"]*"/s/.*"\([^"]*\)".*/\1/p }' "$cfg" 2>/dev/null | head -n 1)
+    fi
+    echo "$sid"
+}
 modify_xray_port() {
     read -p "请输入新的端口号(1-65535): " NEW_PORT
     if ! [[ "$NEW_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_PORT" -lt 1 ] || [ "$NEW_PORT" -gt 65535 ]; then
@@ -298,8 +310,7 @@ modify_xray_port() {
         UUID=$(grep -oP '"id": *"\K[^"]+' /usr/local/etc/xray/config.json)
         FLOW=$(grep -oP '"flow": *"\K[^"]+' /usr/local/etc/xray/config.json)
         SNI=$(grep -oP '"serverNames": *\[ *"\K[^"]+' /usr/local/etc/xray/config.json)
-        SHORTID=$(sed -n '/"shortIds"/,/\]/{ /"[0-9a-zA-Z]*"/s/.*"\([0-9a-zA-Z]*\)".*/\1/p }' /usr/local/etc/xray/config.json | head -n 1)
-        [ -z "$SHORTID" ] && SHORTID=$(grep -oP '"shortIds": *\[ *"\K[^"]+' /usr/local/etc/xray/config.json)
+        SHORTID=$(get_xray_shortid)
         PRIVATE_KEY=$(grep -oP '"privateKey": *"\K[^"]+' /usr/local/etc/xray/config.json)
         NET=$(grep -oP '"network": *"\K[^"]+' /usr/local/etc/xray/config.json)
     fi
@@ -334,13 +345,7 @@ modify_xray_shortid() {
     if [ ! -f /usr/local/etc/xray/config.json ]; then
         log_error "未检测到 Xray 配置文件，请先安装 Xray"
     fi
-    local current_sid=""
-    if command -v jq >/dev/null 2>&1; then
-        current_sid=$(jq -r '.inbounds[0].streamSettings.realitySettings.shortIds[0]' /usr/local/etc/xray/config.json 2>/dev/null)
-    else
-        current_sid=$(sed -n '/"shortIds"/,/\]/{ /"[0-9a-zA-Z]*"/s/.*"\([0-9a-zA-Z]*\)".*/\1/p }' /usr/local/etc/xray/config.json | head -n 1)
-        [ -z "$current_sid" ] && current_sid=$(grep -oP '"shortIds": *\[ *"\K[^"]+' /usr/local/etc/xray/config.json 2>/dev/null)
-    fi
+    local current_sid=$(get_xray_shortid)
     echo -e "\n当前 SHORTID: ${GREEN}${current_sid:-无}${NC}"
     read -p "请输入新的 SHORTID: " NEW_SHORTID
     if [ -z "$NEW_SHORTID" ]; then
@@ -360,10 +365,10 @@ modify_xray_shortid() {
     if command -v jq >/dev/null 2>&1; then
         jq --arg sid "$NEW_SHORTID" '.inbounds[0].streamSettings.realitySettings.shortIds = [$sid]' /usr/local/etc/xray/config.json > /usr/local/etc/xray/config.json.tmp && mv /usr/local/etc/xray/config.json.tmp /usr/local/etc/xray/config.json
     else
-        if [ -n "$current_sid" ]; then
-            sed -i "s/\"$current_sid\"/\"$NEW_SHORTID\"/g" /usr/local/etc/xray/config.json
+        if grep -q '"shortIds"[^[]*\[ *"[^"]*"' /usr/local/etc/xray/config.json; then
+            sed -i 's/\("shortIds"[^[]*\[ *"\)[^"]*/\1'"$NEW_SHORTID"'/' /usr/local/etc/xray/config.json
         else
-            sed -i "/\"shortIds\"/,/\]/ s/\"[0-9a-zA-Z]*\"/\"$NEW_SHORTID\"/" /usr/local/etc/xray/config.json
+            sed -i '/"shortIds"/,/\]/{ /"shortIds"/!s/"[^"]*"/"'"$NEW_SHORTID"'"/ }' /usr/local/etc/xray/config.json
         fi
     fi
 
@@ -374,7 +379,6 @@ modify_xray_shortid() {
         UUID=$(jq -r '.inbounds[0].settings.clients[0].id' /usr/local/etc/xray/config.json)
         FLOW=$(jq -r '.inbounds[0].settings.clients[0].flow' /usr/local/etc/xray/config.json)
         SNI=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
-        SHORTID=$(jq -r '.inbounds[0].streamSettings.realitySettings.shortIds[0]' /usr/local/etc/xray/config.json)
         PRIVATE_KEY=$(jq -r '.inbounds[0].streamSettings.realitySettings.privateKey' /usr/local/etc/xray/config.json)
         PORT=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json)
         NET=$(jq -r '.inbounds[0].streamSettings.network' /usr/local/etc/xray/config.json)
@@ -382,12 +386,11 @@ modify_xray_shortid() {
         UUID=$(grep -oP '"id": *"\K[^"]+' /usr/local/etc/xray/config.json)
         FLOW=$(grep -oP '"flow": *"\K[^"]+' /usr/local/etc/xray/config.json)
         SNI=$(grep -oP '"serverNames": *\[ *"\K[^"]+' /usr/local/etc/xray/config.json)
-        SHORTID=$(sed -n '/"shortIds"/,/\]/{ /"[0-9a-zA-Z]*"/s/.*"\([0-9a-zA-Z]*\)".*/\1/p }' /usr/local/etc/xray/config.json | head -n 1)
-        [ -z "$SHORTID" ] && SHORTID=$(grep -oP '"shortIds": *\[ *"\K[^"]+' /usr/local/etc/xray/config.json)
         PRIVATE_KEY=$(grep -oP '"privateKey": *"\K[^"]+' /usr/local/etc/xray/config.json)
         PORT=$(grep -oP '"port": *\K[0-9]+' /usr/local/etc/xray/config.json | head -1)
         NET=$(grep -oP '"network": *"\K[^"]+' /usr/local/etc/xray/config.json)
     fi
+    SHORTID=$NEW_SHORTID
     PUBLIC_KEY="n5cQsnGAxadThor3_U5fIFafC24rA0-OrA3vQj06onU"
     DOMAIN=$(curl -s ifconfig.me)
     REGION="$(curl -s "https://ipinfo.io/$DOMAIN/country")"
@@ -411,8 +414,7 @@ show_xray_link() {
         UUID=$(grep -oP '"id": *"\K[^"]+' /usr/local/etc/xray/config.json)
         FLOW=$(grep -oP '"flow": *"\K[^"]+' /usr/local/etc/xray/config.json)
         SNI=$(grep -oP '"serverNames": *\[ *"\K[^"]+' /usr/local/etc/xray/config.json)
-        SHORTID=$(sed -n '/"shortIds"/,/\]/{ /"[0-9a-zA-Z]*"/s/.*"\([0-9a-zA-Z]*\)".*/\1/p }' /usr/local/etc/xray/config.json | head -n 1)
-        [ -z "$SHORTID" ] && SHORTID=$(grep -oP '"shortIds": *\[ *"\K[^"]+' /usr/local/etc/xray/config.json)
+        SHORTID=$(get_xray_shortid)
         PRIVATE_KEY=$(grep -oP '"privateKey": *"\K[^"]+' /usr/local/etc/xray/config.json)
         PORT=$(grep -oP '"port": *\K[0-9]+' /usr/local/etc/xray/config.json | head -1)
         NET=$(grep -oP '"network": *"\K[^"]+' /usr/local/etc/xray/config.json)
