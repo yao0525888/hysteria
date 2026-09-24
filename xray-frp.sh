@@ -50,7 +50,6 @@ check_root() {
 }
 install_dependencies() {
     [ "$EUID" -ne 0 ] && exit 1
-
     if command -v apt-get >/dev/null 2>&1; then
         apt-get update -y >/dev/null 2>&1
         command -v unzip >/dev/null 2>&1 || apt-get install -y unzip >/dev/null 2>&1
@@ -77,12 +76,12 @@ uninstall_frps() {
 }
 install_frps() {
     log_step "1" "2" "安装FRPS服务..."
-sudo sh -c 'cat <<EOF >> /etc/sysctl.conf
+    cat <<EOF >> /etc/sysctl.conf
 net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.lo.disable_ipv6 = 1
 EOF
-sysctl -p >/dev/null 2>&1'
+    sysctl -p >/dev/null 2>&1
     uninstall_frps
     local FRP_NAME="frp_${FRP_VERSION#v}_linux_amd64"
     local FRP_FILE="${FRP_NAME}.tar.gz"
@@ -298,7 +297,6 @@ modify_xray_port() {
     sed -i "s/$SNI:[0-9]*/$SNI:$NEW_PORT/" /usr/local/etc/xray/config.json
     restart_services
     log_success "Xray端口已修改为: $NEW_PORT"
-
     if command -v jq >/dev/null 2>&1; then
         UUID=$(jq -r '.inbounds[0].settings.clients[0].id' /usr/local/etc/xray/config.json)
         FLOW=$(jq -r '.inbounds[0].settings.clients[0].flow' /usr/local/etc/xray/config.json)
@@ -361,7 +359,6 @@ modify_xray_shortid() {
         fi
         NEW_SHORTID=$(echo "$NEW_SHORTID" | tr 'A-F' 'a-f')
     fi
-
     if command -v jq >/dev/null 2>&1; then
         jq --arg sid "$NEW_SHORTID" '.inbounds[0].streamSettings.realitySettings.shortIds = [$sid]' /usr/local/etc/xray/config.json > /usr/local/etc/xray/config.json.tmp && mv /usr/local/etc/xray/config.json.tmp /usr/local/etc/xray/config.json
     else
@@ -371,10 +368,8 @@ modify_xray_shortid() {
             sed -i '/"shortIds"/,/\]/{ /"shortIds"/!s/"[^"]*"/"'"$NEW_SHORTID"'"/ }' /usr/local/etc/xray/config.json
         fi
     fi
-
     restart_services
     log_success "SHORTID已修改为: $NEW_SHORTID"
-
     if command -v jq >/dev/null 2>&1; then
         UUID=$(jq -r '.inbounds[0].settings.clients[0].id' /usr/local/etc/xray/config.json)
         FLOW=$(jq -r '.inbounds[0].settings.clients[0].flow' /usr/local/etc/xray/config.json)
@@ -436,7 +431,6 @@ check_and_uninstall() {
     if [ -f /etc/systemd/system/xray.service ] || [ -f /usr/local/bin/xray ] || [ -d /usr/local/etc/xray ] || systemctl is-active --quiet xray 2>/dev/null; then
         has_installed=true
     fi
-
     if [ "$has_installed" = true ]; then
         uninstall_frps
         uninstall_xray
