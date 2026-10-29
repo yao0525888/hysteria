@@ -441,18 +441,19 @@ show_menu() {
     echo -e "${YELLOW}=== Xray & FRPS 管理脚本 ===${NC}"
     echo -e "${GREEN}1.${NC} 安装 Xray + FRPS"
     echo -e "${GREEN}2.${NC} 卸载 Xray + FRPS"
-    echo -e "${GREEN}3.${NC} 修改Xray端口"
-    echo -e "${GREEN}4.${NC} 修改Xray协议"
-    echo -e "${GREEN}5.${NC} 修改SHORTID密钥"
-    echo -e "${GREEN}6.${NC} 查看Xray分享链接"
-    echo -e "${GREEN}7.${NC} 退出"
+    echo -e "${GREEN}3.${NC} 卸载 FRPS"
+    echo -e "${GREEN}4.${NC} 修改Xray端口"
+    echo -e "${GREEN}5.${NC} 修改Xray协议"
+    echo -e "${GREEN}6.${NC} 修改SHORTID密钥"
+    echo -e "${GREEN}7.${NC} 查看Xray分享链接"
+    echo -e "${GREEN}8.${NC} 退出"
     echo -e "${YELLOW}===========================${NC}"
 }
 main() {
     check_root
     while true; do
         show_menu
-        read -p "请选择操作 [1-7]: " choice
+        read -p "请选择操作 [1-8]: " choice
         case $choice in
             1)
                 check_and_uninstall
@@ -470,18 +471,24 @@ main() {
                 break
                 ;;
             3)
-                modify_xray_port
+                uninstall_frps
+                cleanup
+                log_success "FRPS已卸载"
+                break
                 ;;
             4)
-                modify_xray_protocol
+                modify_xray_port
                 ;;
             5)
-                modify_xray_shortid
+                modify_xray_protocol
                 ;;
             6)
-                show_xray_link
+                modify_xray_shortid
                 ;;
             7)
+                show_xray_link
+                ;;
+            8)
                 echo -e "${GREEN}退出脚本${NC}"
                 exit 0
                 ;;
