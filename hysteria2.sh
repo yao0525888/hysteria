@@ -211,24 +211,9 @@ uninstall_hy2() {
     sleep 2
     menu
 }
-start_hy2() {
-    set_instance_vars $1
-    systemctl start ${SVC_NAME}
-    if [[ -n $(systemctl status ${SVC_NAME} 2>/dev/null | grep -w active) ]]; then green "$INST_NAME 已启动"; else red "$INST_NAME 启动失败"; fi
-}
-stop_hy2() {
-    set_instance_vars $1
-    systemctl stop ${SVC_NAME}
-    green "$INST_NAME 已停止"
-}
-restart_hy2() {
-    set_instance_vars $1
-    systemctl restart ${SVC_NAME}
-    if [[ -n $(systemctl status ${SVC_NAME} 2>/dev/null | grep -w active) ]]; then green "$INST_NAME 已重启"; else red "$INST_NAME 重启失败"; fi
-}
 show_config() {
     set_instance_vars $1
-    if [ ! -f "$CLIENT_DIR/url.txt" ]; then red "配置文件不存在"; sleep 2; return; fi
+    if [ ! -f "$CLIENT_DIR/url.txt" ]; then red "配置文件不存在"; sleep 2; menu; return; fi
     green "======================================================================================"
     if [ -f "$CLIENT_DIR/hy-client.yaml" ]; then
         yellow "YAML配置文件 ($CLIENT_DIR/hy-client.yaml):"
@@ -241,6 +226,7 @@ show_config() {
     fi
     green "======================================================================================"
     read -n 1 -s -r -p "按任意键返回菜单..."
+    menu
 }
 change_port() {
     set_instance_vars $1
@@ -258,33 +244,84 @@ change_port() {
     echo -e "${YELLOW}正在重启服务以应用新端口...${PLAIN}"
     systemctl restart ${SVC_NAME}
     if [[ -n $(systemctl status ${SVC_NAME} 2>/dev/null | grep -w active) ]]; then
+        green "======================================================================================"
         green "端口已修改为 $new_port，服务已自动重启！"
+        if [ -f $CLIENT_DIR/url.txt ]; then
+            yellow "分享链接:"
+            red "$(cat $CLIENT_DIR/url.txt)"
+        fi
+        green "======================================================================================"
+        read -n 1 -s -r -p "按任意键返回菜单..."
     else
         red "服务重启失败，请检查端口是否被占用！"
+        sleep 2
     fi
-    sleep 2
     menu
 }
-instance_control_menu() {
+change_sni() {
     set_instance_vars $1
     clear
+    local current_sni=$(grep 'sni:' $CLIENT_DIR/hy-client.yaml 2>/dev/null | awk '{print $2}')
     echo "#############################################################"
-    echo -e "#               ${GREEN}独立管理菜单: $INST_NAME${PLAIN}                   #"
+    echo -e "#                 ${GREEN}修改 SNI 菜单: $INST_NAME${PLAIN}                 #"
     echo "#############################################################"
-    echo -e " ${GREEN}1.${PLAIN} 启动该实例"
-    echo -e " ${GREEN}2.${PLAIN} 停止该实例"
-    echo -e " ${GREEN}3.${PLAIN} 重启该实例"
-    echo -e " ${GREEN}4.${PLAIN} 显示配置及分享链接"
-    echo -e " ${GREEN}0.${PLAIN} 返回主菜单"
-    read -rp "请输入选项 [0-4]: " action
-    case $action in
-        1) start_hy2 $1; sleep 2; instance_control_menu $1 ;;
-        2) stop_hy2 $1; sleep 2; instance_control_menu $1 ;;
-        3) restart_hy2 $1; sleep 2; instance_control_menu $1 ;;
-        4) show_config $1; instance_control_menu $1 ;;
-        0) menu ;;
-        *) instance_control_menu $1 ;;
+    echo -e " 当前 SNI: ${YELLOW}${current_sni:-$MASQUERADE_HOST}${PLAIN}"
+    echo -e " ${GREEN}1.${PLAIN} www.bing.com (微软必应)"
+    echo -e " ${GREEN}2.${PLAIN} www.microsoft.com (微软官网)"
+    echo -e " ${GREEN}3.${PLAIN} www.apple.com (苹果官网)"
+    echo -e " ${GREEN}4.${PLAIN} itunes.apple.com (苹果 iTunes)"
+    echo -e " ${GREEN}5.${PLAIN} gateways.icloud.com (苹果 iCloud)"
+    echo -e " ${GREEN}6.${PLAIN} cloud.tencent.com (腾讯云)"
+    echo -e " ${GREEN}7.${PLAIN} 自定义输入域名"
+    echo -e " ${GREEN}0.${PLAIN} 返回上一级"
+    read -rp "请输入选项 [0-7] (也可直接输入域名): " sni_choice
+    case $sni_choice in
+        1) new_sni="www.bing.com" ;;
+        2) new_sni="www.microsoft.com" ;;
+        3) new_sni="www.apple.com" ;;
+        4) new_sni="itunes.apple.com" ;;
+        5) new_sni="gateways.icloud.com" ;;
+        6) new_sni="cloud.tencent.com" ;;
+        7) read -rp "请输入新的 SNI 域名: " new_sni ;;
+        0) menu; return ;;
+        *)
+            if [[ -n "$sni_choice" ]]; then
+                new_sni="$sni_choice"
+            else
+                red "输入不能为空"
+                sleep 2
+                menu
+                return
+            fi
+            ;;
     esac
+    new_sni=$(echo "$new_sni" | sed -e 's|^https\?://||' -e 's|/.*$||' -e 's| ||g')
+    if [[ -z "$new_sni" ]]; then
+        red "SNI 域名无效"
+        sleep 2
+        menu
+        return
+    fi
+    if [ -f $CONF_DIR/config.yaml ]; then sed -i "s|\(url: https://\).*|\1$new_sni|" $CONF_DIR/config.yaml; fi
+    if [ -f $CLIENT_DIR/hy-client.yaml ]; then sed -i "s/\(sni: \).*/\1$new_sni/" $CLIENT_DIR/hy-client.yaml; fi
+    if [ -f $CLIENT_DIR/hy-client.json ]; then sed -i "s/\(\"sni\": \"\)[^\"]*/\1$new_sni/" $CLIENT_DIR/hy-client.json; fi
+    if [ -f $CLIENT_DIR/url.txt ]; then sed -i "s/sni=[^&]*/sni=$new_sni/" $CLIENT_DIR/url.txt; fi
+    echo -e "${YELLOW}正在重启服务以应用新 SNI...${PLAIN}"
+    systemctl restart ${SVC_NAME}
+    if [[ -n $(systemctl status ${SVC_NAME} 2>/dev/null | grep -w active) ]]; then
+        green "======================================================================================"
+        green "SNI 已修改为 $new_sni，服务已自动重启！"
+        if [ -f $CLIENT_DIR/url.txt ]; then
+            yellow "分享链接:"
+            red "$(cat $CLIENT_DIR/url.txt)"
+        fi
+        green "======================================================================================"
+        read -n 1 -s -r -p "按任意键返回菜单..."
+    else
+        red "服务重启失败，请检查配置！"
+        sleep 2
+    fi
+    menu
 }
 menu() {
     clear
@@ -294,24 +331,28 @@ menu() {
     echo -e " ${YELLOW}--- 实例 1 (默认) ---${PLAIN}"
     echo -e " ${GREEN}1.${PLAIN} 安装 实例1"
     echo -e " ${RED}2.${PLAIN} 卸载 实例1"
-    echo -e " ${GREEN}3.${PLAIN} 管理 实例1 (启停/配置)"
+    echo -e " ${GREEN}3.${PLAIN} 查看 实例1 配置及分享链接"
     echo -e " ${GREEN}4.${PLAIN} 修改 实例1 端口"
+    echo -e " ${GREEN}5.${PLAIN} 修改 实例1 SNI"
     echo -e " ${YELLOW}--- 实例 2 ---${PLAIN}"
-    echo -e " ${GREEN}5.${PLAIN} 安装 实例2"
-    echo -e " ${RED}6.${PLAIN} 卸载 实例2"
-    echo -e " ${GREEN}7.${PLAIN} 管理 实例2 (启停/配置)"
-    echo -e " ${GREEN}8.${PLAIN} 修改 实例2 端口"
+    echo -e " ${GREEN}6.${PLAIN} 安装 实例2"
+    echo -e " ${RED}7.${PLAIN} 卸载 实例2"
+    echo -e " ${GREEN}8.${PLAIN} 查看 实例2 配置及分享链接"
+    echo -e " ${GREEN}9.${PLAIN} 修改 实例2 端口"
+    echo -e " ${GREEN}10.${PLAIN} 修改 实例2 SNI"
     echo -e " ${GREEN}0.${PLAIN} 退出"
-    read -rp "请输入选项 [0-8]: " menuInput
+    read -rp "请输入选项 [0-10]: " menuInput
     case $menuInput in
         1) install_hy2 1 ;;
         2) if [[ -d "/etc/hysteria" ]]; then uninstall_hy2 1; else red "实例1未安装"; sleep 2; menu; fi ;;
-        3) if [[ -d "/etc/hysteria" ]]; then instance_control_menu 1; else red "实例1未安装"; sleep 2; menu; fi ;;
+        3) if [[ -d "/etc/hysteria" ]]; then show_config 1; else red "实例1未安装"; sleep 2; menu; fi ;;
         4) if [[ -d "/etc/hysteria" ]]; then change_port 1; else red "实例1未安装"; sleep 2; menu; fi ;;
-        5) install_hy2 2 ;;
-        6) if [[ -d "/etc/hysteria2" ]]; then uninstall_hy2 2; else red "实例2未安装"; sleep 2; menu; fi ;;
-        7) if [[ -d "/etc/hysteria2" ]]; then instance_control_menu 2; else red "实例2未安装"; sleep 2; menu; fi ;;
-        8) if [[ -d "/etc/hysteria2" ]]; then change_port 2; else red "实例2未安装"; sleep 2; menu; fi ;;
+        5) if [[ -d "/etc/hysteria" ]]; then change_sni 1; else red "实例1未安装"; sleep 2; menu; fi ;;
+        6) install_hy2 2 ;;
+        7) if [[ -d "/etc/hysteria2" ]]; then uninstall_hy2 2; else red "实例2未安装"; sleep 2; menu; fi ;;
+        8) if [[ -d "/etc/hysteria2" ]]; then show_config 2; else red "实例2未安装"; sleep 2; menu; fi ;;
+        9) if [[ -d "/etc/hysteria2" ]]; then change_port 2; else red "实例2未安装"; sleep 2; menu; fi ;;
+        10) if [[ -d "/etc/hysteria2" ]]; then change_sni 2; else red "实例2未安装"; sleep 2; menu; fi ;;
         0) exit 0 ;;
         *) menu ;;
     esac
