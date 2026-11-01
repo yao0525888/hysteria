@@ -286,62 +286,29 @@ get_xray_shortid() {
     echo "$sid"
 }
 modify_xray_port() {
-    read -p "请输入新的端口号(1-65535): " NEW_PORT
-    if ! [[ "$NEW_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_PORT" -lt 1 ] || [ "$NEW_PORT" -gt 65535 ]; then
-        log_error "无效的端口号"
+    if [ ! -f /usr/local/etc/xray/config.json ]; then
+        echo -e "${RED}[错误] 未检测到 Xray 配置文件，请先安装 Xray${NC}"
+        return
     fi
-    if netstat -tuln | grep -q ":$NEW_PORT "; then
-        log_error "端口 $NEW_PORT 已被占用"
+    read -p "请输入新的端口号(1-65535): " NEW_PORT
+    if ! [[ "$NEW_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_PORT" -lt 1 ]] || [ "$NEW_PORT" -gt 65535 ]; then
+        echo -e "${RED}[错误] 无效的端口号${NC}"
+        return
+    fi
+    if netstat -tuln 2>/dev/null | grep -q ":$NEW_PORT "; then
+        echo -e "${RED}[错误] 端口 $NEW_PORT 已被占用${NC}"
+        return
     fi
     sed -i "s/\"port\": [0-9]*/\"port\": $NEW_PORT/" /usr/local/etc/xray/config.json
-    sed -i "s/$SNI:[0-9]*/$SNI:$NEW_PORT/" /usr/local/etc/xray/config.json
+    sed -i "s/\"dest\": \"\([^\"]*\):[0-9]*\"/\"dest\": \"\1:$NEW_PORT\"/" /usr/local/etc/xray/config.json
     restart_services
     log_success "Xray端口已修改为: $NEW_PORT"
-    if command -v jq >/dev/null 2>&1; then
-        UUID=$(jq -r '.inbounds[0].settings.clients[0].id' /usr/local/etc/xray/config.json)
-        FLOW=$(jq -r '.inbounds[0].settings.clients[0].flow' /usr/local/etc/xray/config.json)
-        SNI=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
-        SHORTID=$(jq -r '.inbounds[0].streamSettings.realitySettings.shortIds[0]' /usr/local/etc/xray/config.json)
-        PRIVATE_KEY=$(jq -r '.inbounds[0].streamSettings.realitySettings.privateKey' /usr/local/etc/xray/config.json)
-        NET=$(jq -r '.inbounds[0].streamSettings.network' /usr/local/etc/xray/config.json)
-    else
-        UUID=$(grep -oP '"id": *"\K[^"]+' /usr/local/etc/xray/config.json)
-        FLOW=$(grep -oP '"flow": *"\K[^"]+' /usr/local/etc/xray/config.json)
-        SNI=$(grep -oP '"serverNames": *\[ *"\K[^"]+' /usr/local/etc/xray/config.json)
-        SHORTID=$(get_xray_shortid)
-        PRIVATE_KEY=$(grep -oP '"privateKey": *"\K[^"]+' /usr/local/etc/xray/config.json)
-        NET=$(grep -oP '"network": *"\K[^"]+' /usr/local/etc/xray/config.json)
-    fi
-    PUBLIC_KEY="n5cQsnGAxadThor3_U5fIFafC24rA0-OrA3vQj06onU"
-    PORT=$NEW_PORT
-    DOMAIN=$(curl -s ifconfig.me)
-    REGION="$(curl -s "https://ipinfo.io/$DOMAIN/country")"
-    [ -z "$REGION" ] && REGION="CN"
-    REGION_CN=${COUNTRY_MAP[$REGION]}
-    [ -z "$REGION_CN" ] && REGION_CN="$REGION"
-    LINK="vless://$UUID@$DOMAIN:$PORT?encryption=none&flow=$FLOW&security=reality&sni=$SNI&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORTID&type=${NET:-tcp}#$REGION_CN"
-    echo -e "\n${YELLOW}>>> 新的Xray Reality分享链接：${NC}"
-    echo -e "${GREEN}$LINK${NC}\n"
-}
-modify_xray_protocol() {
-    echo "请选择协议类型："
-    echo "1. tcp"
-    echo "2. ws"
-    echo "3. grpc"
-    read -p "输入序号 [1-3]: " proto_choice
-    case $proto_choice in
-        1) NEW_PROTO="tcp" ;;
-        2) NEW_PROTO="ws" ;;
-        3) NEW_PROTO="grpc" ;;
-        *) log_error "无效选择" ;;
-    esac
-    sed -i "s/\"network\": \"[a-z0-9-]*\"/\"network\": \"$NEW_PROTO\"/" /usr/local/etc/xray/config.json
-    restart_services
-    log_success "Xray协议已修改为: $NEW_PROTO"
+    show_xray_link
 }
 modify_xray_shortid() {
     if [ ! -f /usr/local/etc/xray/config.json ]; then
-        log_error "未检测到 Xray 配置文件，请先安装 Xray"
+        echo -e "${RED}[错误] 未检测到 Xray 配置文件，请先安装 Xray${NC}"
+        return
     fi
     local current_sid=$(get_xray_shortid)
     echo -e "\n当前 SHORTID: ${GREEN}${current_sid:-无}${NC}"
@@ -355,7 +322,8 @@ modify_xray_shortid() {
         echo -e "已随机生成 SHORTID: ${GREEN}$NEW_SHORTID${NC}"
     else
         if ! [[ "$NEW_SHORTID" =~ ^[0-9a-fA-F]+$ ]] || [ ${#NEW_SHORTID} -gt 16 ] || [ $((${#NEW_SHORTID} % 2)) -ne 0 ]; then
-            log_error "无效的 SHORTID！必须是偶数长度(最长16位)的十六进制字符 (0-9, a-f)"
+            echo -e "${RED}[错误] 无效的 SHORTID！必须是偶数长度(最长16位)的十六进制字符 (0-9, a-f)${NC}"
+            return
         fi
         NEW_SHORTID=$(echo "$NEW_SHORTID" | tr 'A-F' 'a-f')
     fi
@@ -370,35 +338,12 @@ modify_xray_shortid() {
     fi
     restart_services
     log_success "SHORTID已修改为: $NEW_SHORTID"
-    if command -v jq >/dev/null 2>&1; then
-        UUID=$(jq -r '.inbounds[0].settings.clients[0].id' /usr/local/etc/xray/config.json)
-        FLOW=$(jq -r '.inbounds[0].settings.clients[0].flow' /usr/local/etc/xray/config.json)
-        SNI=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
-        PRIVATE_KEY=$(jq -r '.inbounds[0].streamSettings.realitySettings.privateKey' /usr/local/etc/xray/config.json)
-        PORT=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json)
-        NET=$(jq -r '.inbounds[0].streamSettings.network' /usr/local/etc/xray/config.json)
-    else
-        UUID=$(grep -oP '"id": *"\K[^"]+' /usr/local/etc/xray/config.json)
-        FLOW=$(grep -oP '"flow": *"\K[^"]+' /usr/local/etc/xray/config.json)
-        SNI=$(grep -oP '"serverNames": *\[ *"\K[^"]+' /usr/local/etc/xray/config.json)
-        PRIVATE_KEY=$(grep -oP '"privateKey": *"\K[^"]+' /usr/local/etc/xray/config.json)
-        PORT=$(grep -oP '"port": *\K[0-9]+' /usr/local/etc/xray/config.json | head -1)
-        NET=$(grep -oP '"network": *"\K[^"]+' /usr/local/etc/xray/config.json)
-    fi
-    SHORTID=$NEW_SHORTID
-    PUBLIC_KEY="n5cQsnGAxadThor3_U5fIFafC24rA0-OrA3vQj06onU"
-    DOMAIN=$(curl -s ifconfig.me)
-    REGION="$(curl -s "https://ipinfo.io/$DOMAIN/country")"
-    [ -z "$REGION" ] && REGION="CN"
-    REGION_CN=${COUNTRY_MAP[$REGION]}
-    [ -z "$REGION_CN" ] && REGION_CN="$REGION"
-    LINK="vless://$UUID@$DOMAIN:$PORT?encryption=none&flow=$FLOW&security=reality&sni=$SNI&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORTID&type=${NET:-tcp}#$REGION_CN"
-    echo -e "\n${YELLOW}>>> 新的Xray Reality分享链接：${NC}"
-    echo -e "${GREEN}$LINK${NC}\n"
+    show_xray_link
 }
 modify_xray_sni() {
     if [ ! -f /usr/local/etc/xray/config.json ]; then
-        log_error "未检测到 Xray 配置文件，请先安装 Xray"
+        echo -e "${RED}[错误] 未检测到 Xray 配置文件，请先安装 Xray${NC}"
+        return
     fi
     local current_sni=""
     if command -v jq >/dev/null 2>&1; then
@@ -459,6 +404,10 @@ modify_xray_sni() {
     show_xray_link
 }
 show_xray_link() {
+    if [ ! -f /usr/local/etc/xray/config.json ]; then
+        echo -e "${RED}[错误] 未检测到 Xray 配置文件，请先安装 Xray${NC}"
+        return
+    fi
     if command -v jq >/dev/null 2>&1; then
         UUID=$(jq -r '.inbounds[0].settings.clients[0].id' /usr/local/etc/xray/config.json)
         FLOW=$(jq -r '.inbounds[0].settings.clients[0].flow' /usr/local/etc/xray/config.json)
@@ -503,8 +452,8 @@ show_menu() {
     echo -e "${YELLOW}=== Xray & FRPS 管理脚本 ===${NC}"
     echo -e "${GREEN}1.${NC} 安装 Xray + FRPS"
     echo -e "${GREEN}2.${NC} 卸载 Xray + FRPS"
-    echo -e "${GREEN}3.${NC} 修改Xray端口"
-    echo -e "${GREEN}4.${NC} 修改Xray协议"
+    echo -e "${GREEN}3.${NC} 卸载 FRPS"
+    echo -e "${GREEN}4.${NC} 修改Xray端口"
     echo -e "${GREEN}5.${NC} 修改SHORTID密钥"
     echo -e "${GREEN}6.${NC} 修改Xray SNI"
     echo -e "${GREEN}7.${NC} 查看Xray分享链接"
@@ -524,19 +473,18 @@ main() {
                 install_xray
                 cleanup
                 show_results
-                break
                 ;;
             2)
                 uninstall_frps
                 uninstall_xray
                 log_success "所有服务已卸载"
-                break
                 ;;
             3)
-                modify_xray_port
+                uninstall_frps
+                log_success "FRPS 服务已卸载"
                 ;;
             4)
-                modify_xray_protocol
+                modify_xray_port
                 ;;
             5)
                 modify_xray_shortid
