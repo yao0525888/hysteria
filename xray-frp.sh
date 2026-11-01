@@ -159,7 +159,7 @@ install_xray() {
     PUBLIC_KEY="n5cQsnGAxadThor3_U5fIFafC24rA0-OrA3vQj06onU"
     PORT=443
     FLOW="xtls-rprx-vision"
-    SNI="dash.cloudflare.com"
+    SNI="www.apple.com"
     DOMAIN=$(curl -s ifconfig.me)
     COUNTRY_CODE=$(curl -s "https://ipinfo.io/$DOMAIN/country")
     REGION=${COUNTRY_MAP[$COUNTRY_CODE]}
@@ -285,6 +285,21 @@ get_xray_shortid() {
     fi
     echo "$sid"
 }
+get_xray_sni() {
+    local cfg="/usr/local/etc/xray/config.json"
+    [ ! -f "$cfg" ] && return
+    local sni=""
+    if command -v jq >/dev/null 2>&1; then
+        sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0] // empty' "$cfg" 2>/dev/null)
+    fi
+    if [ -z "$sni" ] || [ "$sni" = "null" ]; then
+        sni=$(sed -n '/"serverNames"/,/\]/{ /"serverNames"/d; /"[^"]*"/s/.*"\([^"]*\)".*/\1/p }' "$cfg" 2>/dev/null | head -n 1)
+    fi
+    if [ -z "$sni" ]; then
+        sni=$(sed -n 's/.*"dest": *"\([^:]*\):.*/\1/p' "$cfg" 2>/dev/null | head -n 1)
+    fi
+    echo "$sni"
+}
 modify_xray_port() {
     if [ ! -f /usr/local/etc/xray/config.json ]; then
         echo -e "${RED}[错误] 未检测到 Xray 配置文件，请先安装 Xray${NC}"
@@ -345,19 +360,13 @@ modify_xray_sni() {
         echo -e "${RED}[错误] 未检测到 Xray 配置文件，请先安装 Xray${NC}"
         return
     fi
-    local current_sni=""
-    if command -v jq >/dev/null 2>&1; then
-        current_sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0] // empty' /usr/local/etc/xray/config.json 2>/dev/null)
-    fi
-    if [ -z "$current_sni" ] || [ "$current_sni" = "null" ]; then
-        current_sni=$(grep -oP '"serverNames": *\[ *"\K[^"]+' /usr/local/etc/xray/config.json 2>/dev/null | head -n 1)
-    fi
+    local current_sni=$(get_xray_sni)
     echo -e "\n${YELLOW}=== 修改 Xray SNI 菜单 ===${NC}"
-    echo -e "当前 SNI: ${GREEN}${current_sni:-dash.cloudflare.com}${NC}"
-    echo -e "${GREEN}1.${NC} dash.cloudflare.com (Cloudflare)"
-    echo -e "${GREEN}2.${NC} www.bing.com (微软必应)"
-    echo -e "${GREEN}3.${NC} www.microsoft.com (微软官网)"
-    echo -e "${GREEN}4.${NC} www.apple.com (苹果官网)"
+    echo -e "当前 SNI: ${GREEN}${current_sni:-www.apple.com}${NC}"
+    echo -e "${GREEN}1.${NC} www.apple.com (苹果官网)"
+    echo -e "${GREEN}2.${NC} dash.cloudflare.com (Cloudflare)"
+    echo -e "${GREEN}3.${NC} www.bing.com (微软必应)"
+    echo -e "${GREEN}4.${NC} www.microsoft.com (微软官网)"
     echo -e "${GREEN}5.${NC} itunes.apple.com (苹果 iTunes)"
     echo -e "${GREEN}6.${NC} gateways.icloud.com (苹果 iCloud)"
     echo -e "${GREEN}7.${NC} cloud.tencent.com (腾讯云)"
@@ -365,10 +374,10 @@ modify_xray_sni() {
     echo -e "${GREEN}0.${NC} 返回上一级"
     read -p "请输入选项 [0-8] (也可直接输入域名): " sni_choice
     case $sni_choice in
-        1) NEW_SNI="dash.cloudflare.com" ;;
-        2) NEW_SNI="www.bing.com" ;;
-        3) NEW_SNI="www.microsoft.com" ;;
-        4) NEW_SNI="www.apple.com" ;;
+        1) NEW_SNI="www.apple.com" ;;
+        2) NEW_SNI="dash.cloudflare.com" ;;
+        3) NEW_SNI="www.bing.com" ;;
+        4) NEW_SNI="www.microsoft.com" ;;
         5) NEW_SNI="itunes.apple.com" ;;
         6) NEW_SNI="gateways.icloud.com" ;;
         7) NEW_SNI="cloud.tencent.com" ;;
@@ -419,11 +428,14 @@ show_xray_link() {
     else
         UUID=$(grep -oP '"id": *"\K[^"]+' /usr/local/etc/xray/config.json)
         FLOW=$(grep -oP '"flow": *"\K[^"]+' /usr/local/etc/xray/config.json)
-        SNI=$(grep -oP '"serverNames": *\[ *"\K[^"]+' /usr/local/etc/xray/config.json)
+        SNI=$(get_xray_sni)
         SHORTID=$(get_xray_shortid)
         PRIVATE_KEY=$(grep -oP '"privateKey": *"\K[^"]+' /usr/local/etc/xray/config.json)
         PORT=$(grep -oP '"port": *\K[0-9]+' /usr/local/etc/xray/config.json | head -1)
         NET=$(grep -oP '"network": *"\K[^"]+' /usr/local/etc/xray/config.json)
+    fi
+    if [ -z "$SNI" ] || [ "$SNI" = "null" ]; then
+        SNI=$(get_xray_sni)
     fi
     PUBLIC_KEY="n5cQsnGAxadThor3_U5fIFafC24rA0-OrA3vQj06onU"
     DOMAIN=$(curl -s ifconfig.me)
