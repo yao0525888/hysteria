@@ -396,6 +396,68 @@ modify_xray_shortid() {
     echo -e "\n${YELLOW}>>> 新的Xray Reality分享链接：${NC}"
     echo -e "${GREEN}$LINK${NC}\n"
 }
+modify_xray_sni() {
+    if [ ! -f /usr/local/etc/xray/config.json ]; then
+        log_error "未检测到 Xray 配置文件，请先安装 Xray"
+    fi
+    local current_sni=""
+    if command -v jq >/dev/null 2>&1; then
+        current_sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0] // empty' /usr/local/etc/xray/config.json 2>/dev/null)
+    fi
+    if [ -z "$current_sni" ] || [ "$current_sni" = "null" ]; then
+        current_sni=$(grep -oP '"serverNames": *\[ *"\K[^"]+' /usr/local/etc/xray/config.json 2>/dev/null | head -n 1)
+    fi
+    echo -e "\n${YELLOW}=== 修改 Xray SNI 菜单 ===${NC}"
+    echo -e "当前 SNI: ${GREEN}${current_sni:-dash.cloudflare.com}${NC}"
+    echo -e "${GREEN}1.${NC} dash.cloudflare.com (Cloudflare)"
+    echo -e "${GREEN}2.${NC} www.bing.com (微软必应)"
+    echo -e "${GREEN}3.${NC} www.microsoft.com (微软官网)"
+    echo -e "${GREEN}4.${NC} www.apple.com (苹果官网)"
+    echo -e "${GREEN}5.${NC} itunes.apple.com (苹果 iTunes)"
+    echo -e "${GREEN}6.${NC} gateways.icloud.com (苹果 iCloud)"
+    echo -e "${GREEN}7.${NC} cloud.tencent.com (腾讯云)"
+    echo -e "${GREEN}8.${NC} 自定义输入域名"
+    echo -e "${GREEN}0.${NC} 返回上一级"
+    read -p "请输入选项 [0-8] (也可直接输入域名): " sni_choice
+    case $sni_choice in
+        1) NEW_SNI="dash.cloudflare.com" ;;
+        2) NEW_SNI="www.bing.com" ;;
+        3) NEW_SNI="www.microsoft.com" ;;
+        4) NEW_SNI="www.apple.com" ;;
+        5) NEW_SNI="itunes.apple.com" ;;
+        6) NEW_SNI="gateways.icloud.com" ;;
+        7) NEW_SNI="cloud.tencent.com" ;;
+        8) read -p "请输入新的 SNI 域名: " NEW_SNI ;;
+        0) return ;;
+        *)
+            if [[ -n "$sni_choice" ]]; then
+                NEW_SNI="$sni_choice"
+            else
+                echo -e "${RED}[错误] 输入不能为空${NC}"
+                return
+            fi
+            ;;
+    esac
+    NEW_SNI=$(echo "$NEW_SNI" | sed -e 's|^https\?://||' -e 's|/.*$||' -e 's| ||g')
+    if [ -z "$NEW_SNI" ]; then
+        echo -e "${RED}[错误] 无效的 SNI 域名${NC}"
+        return
+    fi
+    if command -v jq >/dev/null 2>&1; then
+        local cur_port=$(jq -r '.inbounds[0].port // 443' /usr/local/etc/xray/config.json 2>/dev/null)
+        jq --arg sni "$NEW_SNI" --arg dest "$NEW_SNI:${cur_port:-443}" '.inbounds[0].streamSettings.realitySettings.serverNames = [$sni] | .inbounds[0].streamSettings.realitySettings.dest = $dest' /usr/local/etc/xray/config.json > /usr/local/etc/xray/config.json.tmp && mv /usr/local/etc/xray/config.json.tmp /usr/local/etc/xray/config.json
+    else
+        sed -i "s/\"dest\": \"[^\"]*:\([0-9]*\)\"/\"dest\": \"$NEW_SNI:\1\"/" /usr/local/etc/xray/config.json
+        if grep -q '"serverNames"[^[]*\[ *"[^"]*"' /usr/local/etc/xray/config.json; then
+            sed -i 's/\("serverNames"[^[]*\[ *"\)[^"]*/\1'"$NEW_SNI"'/' /usr/local/etc/xray/config.json
+        else
+            sed -i '/"serverNames"/,/\]/{ /"serverNames"/!s/"[^"]*"/"'"$NEW_SNI"'"/ }' /usr/local/etc/xray/config.json
+        fi
+    fi
+    restart_services
+    log_success "SNI已修改为: $NEW_SNI"
+    show_xray_link
+}
 show_xray_link() {
     if command -v jq >/dev/null 2>&1; then
         UUID=$(jq -r '.inbounds[0].settings.clients[0].id' /usr/local/etc/xray/config.json)
@@ -441,10 +503,10 @@ show_menu() {
     echo -e "${YELLOW}=== Xray & FRPS 管理脚本 ===${NC}"
     echo -e "${GREEN}1.${NC} 安装 Xray + FRPS"
     echo -e "${GREEN}2.${NC} 卸载 Xray + FRPS"
-    echo -e "${GREEN}3.${NC} 卸载 FRPS"
-    echo -e "${GREEN}4.${NC} 修改Xray端口"
-    echo -e "${GREEN}5.${NC} 修改Xray协议"
-    echo -e "${GREEN}6.${NC} 修改SHORTID密钥"
+    echo -e "${GREEN}3.${NC} 修改Xray端口"
+    echo -e "${GREEN}4.${NC} 修改Xray协议"
+    echo -e "${GREEN}5.${NC} 修改SHORTID密钥"
+    echo -e "${GREEN}6.${NC} 修改Xray SNI"
     echo -e "${GREEN}7.${NC} 查看Xray分享链接"
     echo -e "${GREEN}8.${NC} 退出"
     echo -e "${YELLOW}===========================${NC}"
@@ -471,19 +533,16 @@ main() {
                 break
                 ;;
             3)
-                uninstall_frps
-                cleanup
-                log_success "FRPS已卸载"
-                break
-                ;;
-            4)
                 modify_xray_port
                 ;;
-            5)
+            4)
                 modify_xray_protocol
                 ;;
-            6)
+            5)
                 modify_xray_shortid
+                ;;
+            6)
+                modify_xray_sni
                 ;;
             7)
                 show_xray_link
