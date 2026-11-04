@@ -72,13 +72,14 @@ check_config() {
 create_directories() {
     log_info "创建必要的目录..."
     mkdir -p logs uploads docker/ssl backups public/updates
-    chmod 755 logs uploads public/updates
+    chmod -R 777 logs uploads public/updates 2>/dev/null || true
     log_info "目录创建完成"
 }
 start_services() {
     log_info "启动服务..."
     check_config
     create_directories
+    chmod -R 777 logs uploads public/updates 2>/dev/null || true
     $DOCKER_COMPOSE_CMD pull
     $DOCKER_COMPOSE_CMD up -d
     sleep 10
@@ -91,6 +92,7 @@ stop_services() {
 }
 restart_services() {
     log_info "重启服务..."
+    chmod -R 777 logs uploads public/updates 2>/dev/null || true
     $DOCKER_COMPOSE_CMD restart
     log_info "服务重启完成"
 }
