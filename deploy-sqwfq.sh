@@ -20,13 +20,11 @@ DOCKER_COMPOSE_CMD=$(get_docker_compose_cmd)
 log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
-
 ensure_project_dir() {
     DOCKER_COMPOSE_CMD=$(get_docker_compose_cmd)
     if [ -f "$COMPOSE_FILE" ]; then
         return 0
     fi
-    # 尝试从 systemd 服务获取已安装的 WorkingDirectory
     if [ -f "/etc/systemd/system/activation-system.service" ]; then
         local sys_dir=$(grep "^WorkingDirectory=" /etc/systemd/system/activation-system.service 2>/dev/null | cut -d'=' -f2 | xargs)
         if [ -n "$sys_dir" ] && [ -f "$sys_dir/$COMPOSE_FILE" ]; then
@@ -35,7 +33,6 @@ ensure_project_dir() {
             return 0
         fi
     fi
-    # 尝试常见安装路径
     local common_dirs=(
         "/var/www"
         "/var/www/activation-system"
@@ -54,12 +51,10 @@ ensure_project_dir() {
             return 0
         fi
     done
-
     log_error "当前目录 ($(pwd)) 未找到 $COMPOSE_FILE 配置文件！"
     log_warn "请先使用 cd 命令切换到项目所在的目录（例如: cd /root/www 或项目克隆目录），然后再运行此脚本。"
     exit 1
 }
-
 check_dependencies() {
     log_info "检查系统依赖..."
     if ! command -v docker &> /dev/null; then log_error "Docker 未安装，请先安装 Docker"; exit 1; fi
@@ -76,8 +71,8 @@ check_config() {
 }
 create_directories() {
     log_info "创建必要的目录..."
-    mkdir -p logs uploads docker/ssl backups
-    chmod 755 logs uploads
+    mkdir -p logs uploads docker/ssl backups public/updates
+    chmod 755 logs uploads public/updates
     log_info "目录创建完成"
 }
 start_services() {
@@ -116,6 +111,7 @@ backup_data() {
     $DOCKER_COMPOSE_CMD exec -T mongodb mongodump --db activation_system --username admin --password password --authenticationDatabase admin --out /backup
     docker cp "$($DOCKER_COMPOSE_CMD ps -q mongodb)":/backup "$BACKUP_DIR/mongodb"
     cp -r uploads logs "$BACKUP_DIR/"
+    if [ -d "public/updates" ]; then cp -r public/updates "$BACKUP_DIR/"; fi
     tar -czf "${BACKUP_DIR}.tar.gz" -C "$BACKUP_DIR" .
     rm -rf "$BACKUP_DIR"
     log_info "备份完成: ${BACKUP_DIR}.tar.gz"
@@ -185,30 +181,24 @@ install_system() {
     if ! command -v docker &> /dev/null || ! docker compose version &> /dev/null; then log_error "Docker或Docker Compose安装失败"; exit 1; fi
     if [ "$EUID" -eq 0 ] && [ -n "$SUDO_USER" ]; then sudo usermod -aG docker "$SUDO_USER"; fi
     if ! id -u activation >/dev/null 2>&1; then sudo useradd -r -s /bin/false activation; fi
-    
-    # 创建 docker-compose 兼容包装脚本（针对无独立 docker-compose 命令的系统）
     if command -v docker &> /dev/null && ! command -v docker-compose &> /dev/null; then
         if docker compose version &> /dev/null; then
             sudo tee /usr/local/bin/docker-compose > /dev/null <<'EOF'
-#!/bin/sh
 exec docker compose "$@"
 EOF
             sudo chmod +x /usr/local/bin/docker-compose 2>/dev/null || true
         fi
     fi
-
     create_directories
-    sudo chown -R activation:activation logs uploads backups 2>/dev/null || true
+    sudo chown -R activation:activation logs uploads backups public/updates 2>/dev/null || true
     sudo tee -a /etc/security/limits.conf > /dev/null <<EOF
 activation soft nofile 65536
 activation hard nofile 65536
 EOF
-
     local SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
     local SCRIPT_FULL_PATH="$SCRIPT_DIR/$SCRIPT_NAME"
     ln -sf "$SCRIPT_NAME" "$SCRIPT_DIR/deploy.sh" 2>/dev/null || true
-
     sudo tee /etc/systemd/system/activation-system.service > /dev/null <<EOF
 [Unit]
 Description=Activation System Service
@@ -350,7 +340,6 @@ auto_renew_certificate() {
     PRIMARY_DOMAIN=$(echo "$DOMAIN_INPUT" | awk '{print $1}')
     mkdir -p scripts
     cat > scripts/renew-certs.sh <<EOF
-#!/bin/bash
 set -e
 PROJECT_DIR="$(pwd)"
 cd "\$PROJECT_DIR"
