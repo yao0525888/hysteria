@@ -72,7 +72,7 @@ check_config() {
 create_directories() {
     log_info "创建必要的目录..."
     mkdir -p logs uploads docker/ssl backups public/updates
-    chmod -R 777 logs uploads public/updates 2>/dev/null || true
+    chmod -R 777 logs uploads backups public/updates 2>/dev/null || true
     log_info "目录创建完成"
 }
 start_services() {
