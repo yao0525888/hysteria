@@ -125,6 +125,9 @@ EOF
         echo -e "${RED}FRPS启动失败${NC}"
         exit 1
     fi
+    command -v ufw >/dev/null 2>&1 && ufw allow 7006/tcp >/dev/null 2>&1
+    command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --add-port=7006/tcp --permanent >/dev/null 2>&1 && firewall-cmd --reload >/dev/null 2>&1
+    command -v iptables >/dev/null 2>&1 && iptables -I INPUT -p tcp --dport 7006 -j ACCEPT >/dev/null 2>&1
     log_success "FRPS安装成功"
 }
 install_xray() {
@@ -189,7 +192,7 @@ install_xray() {
         "security": "reality",
         "realitySettings": {
           "show": false,
-          "dest": "$SNI:$PORT",
+          "dest": "$SNI:443",
           "xver": 0,
           "serverNames": [
             "$SNI"
@@ -227,6 +230,9 @@ EOF
     systemctl daemon-reload >/dev/null 2>&1
     systemctl enable xray >/dev/null 2>&1
     systemctl start xray >/dev/null 2>&1
+    command -v ufw >/dev/null 2>&1 && ufw allow "$PORT"/tcp >/dev/null 2>&1
+    command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --add-port="$PORT"/tcp --permanent >/dev/null 2>&1 && firewall-cmd --reload >/dev/null 2>&1
+    command -v iptables >/dev/null 2>&1 && iptables -I INPUT -p tcp --dport "$PORT" -j ACCEPT >/dev/null 2>&1
     log_success "Xray启动成功"
 }
 cleanup() {
@@ -314,8 +320,16 @@ modify_xray_port() {
         echo -e "${RED}[错误] 端口 $NEW_PORT 已被占用${NC}"
         return
     fi
-    sed -i "s/\"port\": [0-9]*/\"port\": $NEW_PORT/" /usr/local/etc/xray/config.json
-    sed -i "s/\"dest\": \"\([^\"]*\):[0-9]*\"/\"dest\": \"\1:$NEW_PORT\"/" /usr/local/etc/xray/config.json
+    if command -v jq >/dev/null 2>&1; then
+        local current_sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0] // "www.apple.com"' /usr/local/etc/xray/config.json 2>/dev/null)
+        jq --argjson port "$NEW_PORT" --arg dest "${current_sni}:443" '.inbounds[0].port = $port | .inbounds[0].streamSettings.realitySettings.dest = $dest' /usr/local/etc/xray/config.json > /usr/local/etc/xray/config.json.tmp && mv /usr/local/etc/xray/config.json.tmp /usr/local/etc/xray/config.json
+    else
+        sed -i "s/\"port\": [0-9]*/\"port\": $NEW_PORT/" /usr/local/etc/xray/config.json
+        sed -i "s/\"dest\": \"\([^\"]*\):[0-9]*\"/\"dest\": \"\1:443\"/" /usr/local/etc/xray/config.json
+    fi
+    command -v ufw >/dev/null 2>&1 && ufw allow "$NEW_PORT"/tcp >/dev/null 2>&1
+    command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --add-port="$NEW_PORT"/tcp --permanent >/dev/null 2>&1 && firewall-cmd --reload >/dev/null 2>&1
+    command -v iptables >/dev/null 2>&1 && iptables -I INPUT -p tcp --dport "$NEW_PORT" -j ACCEPT >/dev/null 2>&1
     restart_services
     log_success "Xray端口已修改为: $NEW_PORT"
     show_xray_link
@@ -398,10 +412,9 @@ modify_xray_sni() {
         return
     fi
     if command -v jq >/dev/null 2>&1; then
-        local cur_port=$(jq -r '.inbounds[0].port // 443' /usr/local/etc/xray/config.json 2>/dev/null)
-        jq --arg sni "$NEW_SNI" --arg dest "$NEW_SNI:${cur_port:-443}" '.inbounds[0].streamSettings.realitySettings.serverNames = [$sni] | .inbounds[0].streamSettings.realitySettings.dest = $dest' /usr/local/etc/xray/config.json > /usr/local/etc/xray/config.json.tmp && mv /usr/local/etc/xray/config.json.tmp /usr/local/etc/xray/config.json
+        jq --arg sni "$NEW_SNI" --arg dest "$NEW_SNI:443" '.inbounds[0].streamSettings.realitySettings.serverNames = [$sni] | .inbounds[0].streamSettings.realitySettings.dest = $dest' /usr/local/etc/xray/config.json > /usr/local/etc/xray/config.json.tmp && mv /usr/local/etc/xray/config.json.tmp /usr/local/etc/xray/config.json
     else
-        sed -i "s/\"dest\": \"[^\"]*:\([0-9]*\)\"/\"dest\": \"$NEW_SNI:\1\"/" /usr/local/etc/xray/config.json
+        sed -i "s/\"dest\": \"[^\"]*:[0-9]*\"/\"dest\": \"$NEW_SNI:443\"/" /usr/local/etc/xray/config.json
         if grep -q '"serverNames"[^[]*\[ *"[^"]*"' /usr/local/etc/xray/config.json; then
             sed -i 's/\("serverNames"[^[]*\[ *"\)[^"]*/\1'"$NEW_SNI"'/' /usr/local/etc/xray/config.json
         else
