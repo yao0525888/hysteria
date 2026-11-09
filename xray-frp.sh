@@ -189,7 +189,7 @@ install_xray() {
         "security": "reality",
         "realitySettings": {
           "show": false,
-          "dest": "$SNI:443",
+          "dest": "$SNI:$PORT",
           "xver": 0,
           "serverNames": [
             "$SNI"
@@ -290,20 +290,11 @@ modify_xray_port() {
     if ! [[ "$NEW_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_PORT" -lt 1 ] || [ "$NEW_PORT" -gt 65535 ]; then
         log_error "无效的端口号"
     fi
-    if command -v ss >/dev/null 2>&1; then
-        if ss -tuln | grep -q ":$NEW_PORT "; then
-            log_error "端口 $NEW_PORT 已被占用"
-        fi
-    elif command -v netstat >/dev/null 2>&1; then
-        if netstat -tuln | grep -q ":$NEW_PORT "; then
-            log_error "端口 $NEW_PORT 已被占用"
-        fi
+    if netstat -tuln | grep -q ":$NEW_PORT "; then
+        log_error "端口 $NEW_PORT 已被占用"
     fi
-    if command -v jq >/dev/null 2>&1; then
-        jq --argjson p "$NEW_PORT" '.inbounds[0].port = $p' /usr/local/etc/xray/config.json > /usr/local/etc/xray/config.json.tmp && mv /usr/local/etc/xray/config.json.tmp /usr/local/etc/xray/config.json
-    else
-        sed -i "s/\"port\": *[0-9]*/\"port\": $NEW_PORT/" /usr/local/etc/xray/config.json
-    fi
+    sed -i "s/\"port\": [0-9]*/\"port\": $NEW_PORT/" /usr/local/etc/xray/config.json
+    sed -i "s/$SNI:[0-9]*/$SNI:$NEW_PORT/" /usr/local/etc/xray/config.json
     restart_services
     log_success "Xray端口已修改为: $NEW_PORT"
     if command -v jq >/dev/null 2>&1; then
