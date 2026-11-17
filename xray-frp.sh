@@ -162,7 +162,7 @@ install_xray() {
     PUBLIC_KEY="n5cQsnGAxadThor3_U5fIFafC24rA0-OrA3vQj06onU"
     PORT=443
     FLOW="xtls-rprx-vision"
-    SNI="www.apple.com"
+    SNI="dash.cloudflare.com"
     DOMAIN=$(curl -s ifconfig.me)
     COUNTRY_CODE=$(curl -s "https://ipinfo.io/$DOMAIN/country")
     REGION=${COUNTRY_MAP[$COUNTRY_CODE]}
@@ -321,7 +321,7 @@ modify_xray_port() {
         return
     fi
     if command -v jq >/dev/null 2>&1; then
-        local current_sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0] // "www.apple.com"' /usr/local/etc/xray/config.json 2>/dev/null)
+        local current_sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0] // "dash.cloudflare.com"' /usr/local/etc/xray/config.json 2>/dev/null)
         jq --argjson port "$NEW_PORT" --arg dest "${current_sni}:443" '.inbounds[0].port = $port | .inbounds[0].streamSettings.realitySettings.dest = $dest' /usr/local/etc/xray/config.json > /usr/local/etc/xray/config.json.tmp && mv /usr/local/etc/xray/config.json.tmp /usr/local/etc/xray/config.json
     else
         sed -i "s/\"port\": [0-9]*/\"port\": $NEW_PORT/" /usr/local/etc/xray/config.json
