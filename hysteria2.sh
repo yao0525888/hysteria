@@ -51,14 +51,14 @@ SVC_NAME="hysteria-server"
 CONF_DIR="/etc/hysteria"
 CLIENT_DIR="/root/hy"
 DEF_PORT=8443
-DEF_HOP_RANGE="20000-35000"
+DEF_HOP_RANGE="20000-30000"
 INST_NAME="实例1"
 elif [[ "$1" == "2" ]]; then
 SVC_NAME="hysteria-server2"
 CONF_DIR="/etc/hysteria2"
 CLIENT_DIR="/root/hy2"
 DEF_PORT=7050
-DEF_HOP_RANGE="35001-50000"
+DEF_HOP_RANGE="35000-50000"
 INST_NAME="实例2"
 fi
 }
@@ -368,7 +368,7 @@ case $hop_opt in
 read -rp "请输入端口跳跃范围 (格式: 起始-结束，直接回车使用 $DEF_HOP_RANGE): " user_range
 if [[ -z "$user_range" ]]; then user_range="$DEF_HOP_RANGE"; fi
 if [[ ! "$user_range" =~ ^[0-9]+-[0-9]+$ ]]; then
-red "格式错误！必须为 起始-结束 (例如: 20000-35000)"
+red "格式错误！必须为 起始-结束 (例如: 20000-30000)"
 sleep 2
 menu
 return
